@@ -8,22 +8,23 @@ import socket
 import random
 import sys
 
-qtypes = {'A'    : 1,
-          'NS'   : 2,
-          'MD'   : 3,
-          'MF'   : 4,
-          'CNAME': 5,
-          'SOA'  : 6,
-          'MB'   : 7,
-          'MG'   : 8,
-          'MR'   : 9,
+qtypes = {'A'    :  1,
+          'NS'   :  2,
+          'MD'   :  3,
+          'MF'   :  4,
+          'CNAME':  5,
+          'SOA'  :  6,
+          'MB'   :  7,
+          'MG'   :  8,
+          'MR'   :  9,
           'NULL' : 10,
           'WKS'  : 11,
           'PTR'  : 12,
           'HINFO': 13,
           'MINFO': 14,
           'MX'   : 15,
-          'TXT'  : 16}
+          'TXT'  : 16,
+          'AAAA' : 28}
 
 qclasses = {'IN': 1}
 
@@ -37,9 +38,15 @@ def gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount):
     ARCount = ARCount.to_bytes(2, byteorder='big')
     return trans_id + flags + QDCount + ANCount + NSCount + ARCount
 
+def gen_header_std_query():
+    return gen_header(gen_trans_id(), gen_flags_std_query(), 1, 0, 0, 0)
+
 def gen_flags(QR, OpCode, AA, TC, RD, RA, Z, RCode):
     flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
     return flags.to_bytes(2, byteorder='big')
+
+def gen_flags_std_query():
+    return gen_flags(0, 0, 0, 0, 1, 0, 0, 0)
 
 def parse_flags(flags):
     QR      = (flags >> 15) & 2**1-1
@@ -96,8 +103,11 @@ def skip_name(start, data):
 def gen_question(qname, qtype, qclass):
     if qtype == 'PTR':
         query = gen_ptr(qname)
-    else:
+    elif qtype in qtypes.keys():
         query = gen_name(qname)
+    else:
+        print("Support not implmented for record type: " + qtype)
+        sys.exit(1)
     query += qtypes[qtype].to_bytes(2, byteorder='big')
     query += qclasses[qclass].to_bytes(2, byteorder='big')
     return query
@@ -112,36 +122,52 @@ def gen_trans_id():
     return random.randrange(2**16-1).to_bytes(2, byteorder='big')
 
 def parse_rdata(qtype, start, data):
-    if qtype == 1:
+    rdata = {}
+    if qtype == qtypes['A']:
         if debug: print("Parsing A record")
-        return str(data[start])+'.'+str(data[start+1])+'.'+str(data[start+2])+'.'+str(data[start+3])
-    elif qtype == 2:
+        rdata['ADDRESS'] = str(data[start])+'.'+str(data[start+1])+'.'+str(data[start+2])+'.'+str(data[start+3])
+    elif qtype == qtypes['NS']:
         if debug: print("Parsing NS record")
-        return parse_name(start, data)
-    elif qtype == 5:
+        rdata['NSDNAME'] = parse_name(start, data)
+    elif qtype == qtypes['CNAME']:
         if debug: print("Parsing CNAME record")
-        return parse_name(start, data)
-    elif qtype == 6:
+        rdata['CNAME'] =  parse_name(start, data)
+    elif qtype == qtypes['SOA']:
         if debug: print("Parsing SOA record")
-        mname   = parse_name(start, data)
-        start   = skip_name(start, data)
-        rname   = parse_name(start, data)
-        start   = skip_name(start, data)
-        serial  = int.from_bytes(data[start:start+4], 'big')
-        refresh = int.from_bytes(data[start+4:start+8], 'big')
-        retry   = int.from_bytes(data[start+8:start+12], 'big')
-        expire  = int.from_bytes(data[start+12:start+16], 'big')
-        minimum = int.from_bytes(data[start+20:start+24], 'big')
-        return mname
-    elif qtype == 12:
+        rdata['MNAME']  = parse_name(start, data)
+        start = skip_name(start, data)
+        rdata['RNAME']  = parse_name(start, data)
+        start = skip_name(start, data)
+        rdata['SERIAL']  = int.from_bytes(data[start:start+4], 'big')
+        rdata['REFRESH'] = int.from_bytes(data[start+4:start+8], 'big')
+        rdata['RETRY']   = int.from_bytes(data[start+8:start+12], 'big')
+        rdata['EXPIRE']  = int.from_bytes(data[start+12:start+16], 'big')
+        rdata['MINIMUM'] = int.from_bytes(data[start+20:start+24], 'big')
+    elif qtype == qtypes['PTR']:
         if debug: print("Parsing PTR record");
-        return parse_name(start, data)
-    elif qtype == 15:
+        rdata['PTRDNAME'] = parse_name(start, data)
+    elif qtype == qtypes['MX']:
         if debug: print("Parsing MX record");
-        mx_preference = int.from_bytes(data[start:start+2], 'big')
-        return parse_name(start+2, data)
+        rdata['PREFERENCE'] = int.from_bytes(data[start:start+2], 'big')
+        rdata['EXCHANGE']   = parse_name(start+2, data)
+    elif qtype == qtypes['TXT']:
+        if debug: print("Parsing TXT record");
+        length = int.from_bytes(data[start-2:start], 'big')
+        curr_size = 0
+        rdata['TXT-DATA'] = []
+        while curr_size < length and data[start+curr_size]:
+            size = data[start+curr_size]
+            rdata['TXT-DATA'].append(data[start+curr_size+1:start+curr_size+1+size].decode("ascii"))
+            curr_size += (1+size)
+    elif qtype == qtypes['AAAA']:
+        if debug: print("Parsing AAAA record");
+        AAAA = ''
+        for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
+        rdata['AAAA_ADDRESS'] = AAAA[:-1]
     else:
-        if debug: print("Parsing not implmented for record type:" + str(qtype))
+        if debug: print("Parsing not implmented for record type: " + str(qtype))
+        rdata['ERROR'] = "Parsing not implmented for record type: " + str(qtype)
+    return rdata
 
 def parse_packet(packet):
     if(tcp):
@@ -191,6 +217,10 @@ def parse_packet(packet):
             RDlength = int.from_bytes(packet[end+8:end+10], 'big')
             end += 10
             RData = parse_rdata(qtype, end, packet)
+            RData['QNAME']  = qname
+            RData['QTYPE']  = qtype
+            RData['QCLASS'] = qclass
+            RData['TTL']    = ttl
             print(RData)
             end += RDlength
             pos = end
@@ -207,26 +237,32 @@ RA        = 0 #Is recursive support available in the NS
 Z         = 0 #Reserved
 RCode     = 0 #Response Code
 
+#COUNTS
 QDCount   = 1 
 ANCount   = 0
 NSCount   = 0
 ARCount   = 0
 
-qname     = 'google.com'
-qtype     = 'SOA'
+#QUERY
+qname     = 'www.google.com'
+qtype     = 'AAAA'
 qclass    = 'IN'
 
+#MISC
+server    = '155.98.110.17'
+port      = 53
 tcp       = 0
 debug     = 0
 ##########################
 
 sock_type = socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
 conn = socket.socket(socket.AF_INET, sock_type)
-conn.connect(('8.8.8.8', 53))
+conn.connect((server, port))
 
 trans_id = gen_trans_id()
 flags    = gen_flags(QR, OpCode, AA, TC, RD, RA, Z, RCode)
 header   = gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount)
+#header    = gen_header_std_query()
 query    = gen_question(qname, qtype, qclass)
 packet   = gen_packet(header, query)
 if not tcp and len(packet) > 512:
