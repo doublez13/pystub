@@ -64,9 +64,11 @@ def parse_flags(flags):
     TC      = (flags >>  9) & 2**1-1
     RD      = (flags >>  8) & 2**1-1
     RA      = (flags >>  7) & 2**1-1
-    Z       = (flags >>  3) & 2**3-1
+    Z       = (flags >>  6) & 2**1-1
+    AD      = (flags >>  5) & 2**1-1 #RFC 4035
+    CD      = (flags >>  4) & 2**1-1 #RFC 4035
     RCode   = (flags >>  0) & 2**4-1
-    return (QR, OpCode, AA, TC, RD, RA, Z, RCode)
+    return {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
 def gen_name(qname):
     if len(qname) > 253:
@@ -173,7 +175,7 @@ def parse_rdata(qtype, start, data):
         AAAA = ''
         for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
         rdata['AAAA_ADDRESS'] = AAAA[:-1]
-    elif qtype == qtypes['SRV']:
+    elif qtype == qtypes['SRV']: #RFC 2782
         if debug: print("Parsing SRV record")
         rdata['PRIORITY'] = int.from_bytes(data[start:start+2], 'big')
         rdata['WEIGHT']   = int.from_bytes(data[start+2:start+4], 'big')
@@ -203,11 +205,11 @@ def parse_packet(packet):
     ARCount  = int.from_bytes(header[10:12], 'big') #Number of add RRS
 
     flags = parse_flags(flags)
-    if(flags[0] == 0): #QR
+    if(flags["QR"] == 0): #QR
         print("QR code indicates a question, not a response. Aborting...")
         sys.exit(1);
 
-    RCode = flags[7]
+    RCode = flags["RCode"]
     if RCode not in rcodes:
         print("RCode not implemented. Aborting...")
         sys.exit(1)
@@ -220,7 +222,7 @@ def parse_packet(packet):
             print("QDCount > 1 not supported. Aborting...")
             sys.exit(1)
         question_end = pos
-        while packet[question_end] > 0:
+        while packet[question_end] > 0: #Are we assuming the QNAME field isn't compressed?
           question_end += 1
         question_end += 5
         quest = packet[pos:question_end]
