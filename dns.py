@@ -29,6 +29,13 @@ qtypes = {'A'    :  1,
 
 qclasses = {'IN': 1}
 
+rcodes= {0: "No error condition",
+         1: "Format error",
+         2: "Server failure",
+         3: "Name error",
+         4: "Not implemented",
+         5: "Refused"}
+
 def gen_packet(header, query):
     return header + query
 
@@ -171,6 +178,7 @@ def parse_rdata(qtype, start, data):
     return rdata
 
 def parse_packet(packet):
+    ret = {}
     if(tcp):
         length = int.from_bytes(packet[:2], 'big')
         packet = packet[2:]
@@ -189,8 +197,13 @@ def parse_packet(packet):
         print("QR code indicates a question, not a response. Aborting...")
         sys.exit(1);
 
+    RCode = flags[7]
+    if RCode not in rcodes:
+        print("RCode not implemented. Aborting...")
+        sys.exit(1)
+    ret['RCODE'] = rcodes[RCode]
+
     pos = 12
-    ret = {}
     if(QDCount):
         if debug: print("Response contains query section. Parsing...")
         if QDCount > 1:
@@ -254,7 +267,7 @@ NSCount   = 0
 ARCount   = 0
 
 #QUERY
-qname     = 'eng.utah.edu'
+qname     = 'www.google.com'
 qtype     = 'A'
 qclass    = 'IN'
 
