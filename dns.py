@@ -7,6 +7,7 @@
 import socket
 import random
 import sys
+import json
 
 qtypes = {'A'    :  1,
           'NS'   :  2,
@@ -115,7 +116,7 @@ def gen_question(qname, qtype, qclass):
 def parse_question(question):
     qname  = parse_name(0, question)
     qtype  = int.from_bytes(question[-4:-2], 'big')
-    qclass = int.from_bytes(question[-2:0], 'big')
+    qclass = int.from_bytes(question[-2:], 'big')
     return (qname, qtype, qclass)
 
 def gen_trans_id():
@@ -189,24 +190,32 @@ def parse_packet(packet):
         sys.exit(1);
 
     pos = 12
+    ret = {}
     if(QDCount):
         if debug: print("Response contains query section. Parsing...")
+        if QDCount > 1:
+            print("QDCount > 1 not supported. Aborting...")
+            sys.exit(1)
         question_end = pos
         while packet[question_end] > 0:
           question_end += 1
         question_end += 5
-        quest        = packet[pos:question_end]
-        quest_parsed = parse_question(quest)
-        pos          = question_end
+        quest = packet[pos:question_end]
+        qdata = parse_question(quest)
+        pos   = question_end
+        #Probably not going to support multiple queries, but storing in list anyway
+        ret['Question'] = []
+        ret['Question'].append({'QNAME':qdata[0], "QTYPE":qdata[1], 'QCLASS':qdata[2]})
         if debug: print()
-    for section in ('Answers', 'Auth NS', "Additional"):
-        if section == 'Answers':
+    for section in ('Answer', 'Authority', "Additional"):
+        if section == 'Answer':
             count = ANCount
-        elif section == "Auth NS":
+        elif section == "Authority":
             count = NSCount
         elif section == "Additional":
             count = ARCount
         if count and debug: print("Response contains " + section + " section. Parsing...")
+        ret[section] = []
         for i in range(count):
             end      = pos
             end      = skip_name(end, packet)
@@ -221,10 +230,11 @@ def parse_packet(packet):
             RData['QTYPE']  = qtype
             RData['QCLASS'] = qclass
             RData['TTL']    = ttl
-            print(RData)
+            ret[section].append(RData)
             end += RDlength
             pos = end
         if count and debug: print()
+    return ret
 
 ######QUERY SETTINGS######
 #FLAGS
@@ -244,12 +254,12 @@ NSCount   = 0
 ARCount   = 0
 
 #QUERY
-qname     = 'www.google.com'
-qtype     = 'AAAA'
+qname     = 'eng.utah.edu'
+qtype     = 'A'
 qclass    = 'IN'
 
 #MISC
-server    = '155.98.110.17'
+server    = '172.20.120.20'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -273,5 +283,6 @@ if tcp:
     packet = packet_len + packet
 
 conn.sendall(packet)
-packet= conn.recv(4096)
-parse_packet(packet)
+packet = conn.recv(4096)
+parsed = parse_packet(packet)
+print(json.dumps(parsed, indent=2))
