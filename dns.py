@@ -105,7 +105,7 @@ def parse_name(start, packet):
 
 def skip_name(start, data):
     while data[start] > 0:
-        if data[start] == 0xc0:
+        if data[start] >= 0xc0:
             start += 1
             break
         start += 1
@@ -123,10 +123,11 @@ def gen_question(qname, qtype, qclass):
     query += qclasses[qclass].to_bytes(2, byteorder='big')
     return query
 
-def parse_question(question):
-    qname  = parse_name(0, question)
-    qtype  = int.from_bytes(question[-4:-2], 'big')
-    qclass = int.from_bytes(question[-2:], 'big')
+def parse_question(start, data):
+    qname  = parse_name(start, data)
+    pos    = skip_name(start, data)
+    qtype  = int.from_bytes(data[pos:pos+2], 'big')
+    qclass = int.from_bytes(data[pos+2:pos+4], 'big')
     return (qname, qtype, qclass)
 
 def gen_trans_id():
@@ -221,13 +222,8 @@ def parse_packet(packet):
         if QDCount > 1:
             print("QDCount > 1 not supported. Aborting...")
             sys.exit(1)
-        question_end = pos
-        while packet[question_end] > 0: #Are we assuming the QNAME field isn't compressed?
-          question_end += 1
-        question_end += 5
-        quest = packet[pos:question_end]
-        qdata = parse_question(quest)
-        pos   = question_end
+        qdata = parse_question(pos, packet)
+        pos   = skip_name(pos, packet)+4
         #Probably not going to support multiple queries, but storing in list anyway
         ret['Question'] = []
         ret['Question'].append({'QNAME':qdata[0], "QTYPE":qdata[1], 'QCLASS':qdata[2]})
