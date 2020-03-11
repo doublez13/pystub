@@ -25,7 +25,8 @@ qtypes = {'A'    :  1,
           'MINFO': 14,
           'MX'   : 15,
           'TXT'  : 16,
-          'AAAA' : 28}
+          'AAAA' : 28,
+          'SRV'  : 33}
 
 qclasses = {'IN': 1}
 
@@ -152,14 +153,14 @@ def parse_rdata(qtype, start, data):
         rdata['EXPIRE']  = int.from_bytes(data[start+12:start+16], 'big')
         rdata['MINIMUM'] = int.from_bytes(data[start+20:start+24], 'big')
     elif qtype == qtypes['PTR']:
-        if debug: print("Parsing PTR record");
+        if debug: print("Parsing PTR record")
         rdata['PTRDNAME'] = parse_name(start, data)
     elif qtype == qtypes['MX']:
-        if debug: print("Parsing MX record");
+        if debug: print("Parsing MX record")
         rdata['PREFERENCE'] = int.from_bytes(data[start:start+2], 'big')
         rdata['EXCHANGE']   = parse_name(start+2, data)
     elif qtype == qtypes['TXT']:
-        if debug: print("Parsing TXT record");
+        if debug: print("Parsing TXT record")
         length = int.from_bytes(data[start-2:start], 'big')
         curr_size = 0
         rdata['TXT-DATA'] = []
@@ -168,10 +169,16 @@ def parse_rdata(qtype, start, data):
             rdata['TXT-DATA'].append(data[start+curr_size+1:start+curr_size+1+size].decode("ascii"))
             curr_size += (1+size)
     elif qtype == qtypes['AAAA']:
-        if debug: print("Parsing AAAA record");
+        if debug: print("Parsing AAAA record")
         AAAA = ''
         for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
         rdata['AAAA_ADDRESS'] = AAAA[:-1]
+    elif qtype == qtypes['SRV']:
+        if debug: print("Parsing SRV record")
+        rdata['PRIORITY'] = int.from_bytes(data[start:start+2], 'big')
+        rdata['WEIGHT']   = int.from_bytes(data[start+2:start+4], 'big')
+        rdata['PORT']     = int.from_bytes(data[start+4:start+6], 'big')
+        rdata['TARGET']   = parse_name(start+6, data)
     else:
         if debug: print("Parsing not implmented for record type: " + str(qtype))
         rdata['ERROR'] = "Parsing not implmented for record type: " + str(qtype)
@@ -182,9 +189,12 @@ def parse_packet(packet):
     if(tcp):
         length = int.from_bytes(packet[:2], 'big')
         packet = packet[2:]
-    header = packet[:12]
     
     #parse header
+    if len(packet) < 12:
+        print("Packet too short. Aborting...")
+        sys.exit(1)
+    header = packet[:12]
     trans_id = int.from_bytes(header[:2], 'big')
     flags    = int.from_bytes(header[2:4], 'big')
     QDCount  = int.from_bytes(header[4:6], 'big')   #Number of questions
