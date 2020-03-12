@@ -70,6 +70,13 @@ def parse_flags(flags):
     RCode   = (flags >>  0) & 2**4-1
     return {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
+#Find key by value in qtypes and qclasses
+def qtype_int_to_name(qint):
+  return {v: k for k, v in qtypes.items()}[qint]
+
+def qclass_int_to_name(qint):
+  return {v: k for k, v in qclasses.items()}[qint]
+
 def gen_name(qname):
     if len(qname) > 253:
         return null
@@ -126,7 +133,9 @@ def parse_question(start, data):
     qname  = parse_name(start, data)
     pos    = skip_name(start, data)
     qtype  = int.from_bytes(data[pos:pos+2], 'big')
+    qtype  = qtype_int_to_name(qtype)
     qclass = int.from_bytes(data[pos+2:pos+4], 'big')
+    qclass = qclass_int_to_name(qclass)
     return (qname, qtype, qclass)
 
 def gen_trans_id():
@@ -210,15 +219,16 @@ def parse_packet(packet):
     ARCount  = int.from_bytes(header[10:12], 'big') #Number of add RRS
 
     flags = parse_flags(flags)
-    if(flags["QR"] == 0): #QR
-        print("QR code indicates a question, not a response. Aborting...")
-        sys.exit(1);
+    #if(flags["QR"] == 0): #QR
+    #    print("QR code indicates a question, not a response. Aborting...")
+    #    sys.exit(1);
 
     RCode = flags["RCode"]
     if RCode not in rcodes:
         print("RCode not implemented. Aborting...")
         sys.exit(1)
     ret['RCODE'] = rcodes[RCode]
+    ret['TXID']  = trans_id
 
     pos = 12
     if(QDCount):
@@ -284,12 +294,52 @@ qtype     = 'A'
 qclass    = 'IN'
 
 #MISC
-server    = '172.20.120.20'
+server    = '8.8.8.8'
 port      = 53
-tcp       = 1
+tcp       = 0
 debug     = 0
 ##########################
 
+#Connection to upstream dns server
+sock_type = socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
+upstr = socket.socket(socket.AF_INET, sock_type)
+upstr.connect((server, port))
+
+#Listen for a query here
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(('', 53))
+while True:
+   request = s.recv(4096)
+   parsed  = parse_packet(request)
+   cltxid  = parsed['TXID']
+   qname   = parsed['Question'][0]['QNAME']
+   qtype   = parsed['Question'][0]['QTYPE']
+   qclass  = parsed['Question'][0]['QCLASS']
+
+   #Build and send query upstream
+   header  = gen_header_std_query()
+   query   = gen_question(qname, qtype, qclass)
+   packet  = gen_packet(header, query)
+   upstr.sendall(packet)
+
+   #Receive and parse upstream response
+   packet = upstr.recv(4096)
+   parsed = parse_packet(packet)
+
+   #Build and send client response
+
+   s.send()
+   s.close()
+
+
+
+
+
+
+
+
+sys.exit(0)
+#Original Code. Here for reference while I incorporate it above
 sock_type = socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
 conn = socket.socket(socket.AF_INET, sock_type)
 conn.connect((server, port))
