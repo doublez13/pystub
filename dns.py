@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/local/bin/python3.6
 #Python implementation of RFC 1035 just for fun
 #https://tools.ietf.org/html/rfc1035
 #
@@ -191,9 +191,82 @@ def parse_rdata(qtype, start, data):
         rdata['PORT']     = int.from_bytes(data[start+4:start+6], 'big')
         rdata['TARGET']   = parse_name(start+6, data)
     else:
-        if debug: print("Parsing not implmented for record type: " + str(qtype))
+        print("Parsing not implmented for record type: " + str(qtype))
         rdata['ERROR'] = "Parsing not implmented for record type: " + str(qtype)
     return rdata
+
+def gen_rdata(data):
+    rdata = b''
+    qtype = data['QTYPE'];
+    if qtype == 'A':
+        if debug: print("Building A record")
+        size   = 4
+        add    = data['ADDRESS'].split('.')
+        rdata += size.to_bytes(2, byteorder='big')
+        for i in range(4):
+          rdata += int(add[i]).to_bytes(1, 'big')
+    elif qtype == 'NS':
+        if debug: print("Building NS record")
+        nsdname = data['NSDNAME']
+        size    = len(nsdname)
+        rdata  += size.to_bytes(2, byteorder='big')
+        rdata  += gen_name(nsdname)
+    elif qtype == 'CNAME':
+        if debug: print("Building CNAME record")
+        cname   = data['CNAME']
+        size    = len(cname)
+        rdata  += size.to_bytes(2, byteorder='big')
+        rdata  += gen_name(cname)
+    elif qtype == 'SOA':
+        {'MNAME': 'a1-21.akam.net', 'RNAME': 'hostmaster.newegg.com', 'SERIAL': 2013113677, 'REFRESH': 900, 'RETRY': 600, 'EXPIRE': 604800, 'MINIMUM': 0, 'QNAME': 'newegg.com', 'QTYPE': 'SOA', 'QCLASS': 'IN', 'TTL': 3599}
+        if debug: print("Building SOA record")
+        size    = len(data['MNAME']) + len(data['RNAME']) + 4*5
+        mname   = gen_name(data['MNAME'])
+        rname   = gen_name(data['RNAME'])
+        serial  = data['SERIAL'].to_bytes(4, byteorder='big')
+        refresh = data['REFRESH'].to_bytes(4, byteorder='big')
+        retry   = data['RETRY'].to_bytes(4, byteorder='big')
+        expire  = data['EXPIRE'].to_bytes(4, byteorder='big')
+        minimum = data['MINIMUM'].to_bytes(4, byteorder='big')
+        rdata  += size.to_bytes(2, byteorder='big')
+        rdata  += mname + rname + serial + refresh + retry + expire + minimum
+    else:
+        print("Parsing not implmented for record type: " + str(qtype))
+        print(data)
+    return rdata
+
+def gen_RRs(data):
+    response = ''
+    if data['QDCount']:
+      qname  = data['Question'][0]['QNAME']
+      qtype  = data['Question'][0]['QTYPE']
+      qclass = data['Question'][0]['QCLASS']
+      response = gen_name(qname)
+      response += qtypes[qtype].to_bytes(2, byteorder='big')
+      response += qclasses[qclass].to_bytes(2, byteorder='big')
+    for section in ['Answer', 'Authority', 'Additional']:
+        count = 0
+        if section == 'Answer' and data['ANCount']:
+            count = data['ANCount']
+        elif section == 'Authority' and data['NSCount']:
+            count = data['NSCount']
+        elif section == 'Additional' and data['ARCount']:
+            count = data['ARCount']
+        for i in range(count):
+            qname  = data[section][i]['QNAME']
+            qtype  = data[section][i]['QTYPE']
+            qclass = data[section][i]['QCLASS']
+            ttl    = data[section][i]['TTL']
+
+            tmp_res  = gen_name(qname)
+            tmp_res += qtypes[qtype].to_bytes(2, byteorder='big')
+            tmp_res += qclasses[qclass].to_bytes(2, byteorder='big')
+            tmp_res += ttl.to_bytes(4, byteorder='big')
+            rdata    = gen_rdata(data[section][i])
+            if len(rdata) > 0 : #Type implemented
+                tmp_res  += rdata
+                response += tmp_res
+    return response
 
 def parse_packet(packet):
     ret = {}
@@ -219,20 +292,22 @@ def parse_packet(packet):
     ARCount  = int.from_bytes(header[10:12], 'big') #Number of add RRS
 
     flags = parse_flags(flags)
-    #if(flags["QR"] == 0): #QR
-    #    print("QR code indicates a question, not a response. Aborting...")
-    #    sys.exit(1);
 
     RCode = flags["RCode"]
     if RCode not in rcodes:
         print("RCode not implemented. Aborting...")
         sys.exit(1)
-    ret['RCODE'] = rcodes[RCode]
-    ret['TXID']  = trans_id
+
+    ret['RCODE']   = rcodes[RCode]
+    ret['TXID']    = trans_id
+    ret['QDCount'] = QDCount
+    ret['ANCount'] = ANCount
+    ret['NSCount'] = NSCount
+    ret['ARCount'] = ARCount
 
     pos = 12
     if(QDCount):
-        if debug: print("Response contains query section. Parsing...")
+        if debug: print("Packet query section. Parsing...")
         if QDCount > 1:
             print("QDCount > 1 not supported. Aborting...")
             sys.exit(1)
@@ -241,7 +316,6 @@ def parse_packet(packet):
         #Probably not going to support multiple queries, but storing in list anyway
         ret['Question'] = []
         ret['Question'].append({'QNAME':qdata[0], "QTYPE":qdata[1], 'QCLASS':qdata[2]})
-        if debug: print()
     for section in ('Answer', 'Authority', "Additional"):
         if section == 'Answer':
             count = ANCount
@@ -262,13 +336,12 @@ def parse_packet(packet):
             end += 10
             RData = parse_rdata(qtype, end, packet)
             RData['QNAME']  = qname
-            RData['QTYPE']  = qtype
-            RData['QCLASS'] = qclass
+            RData['QTYPE']  = qtype_int_to_name(qtype)
+            RData['QCLASS'] = qclass_int_to_name(qclass)
             RData['TTL']    = ttl
             ret[section].append(RData)
             end += RDlength
             pos = end
-        if count and debug: print()
     return ret
 
 ######QUERY SETTINGS######
@@ -297,7 +370,7 @@ qclass    = 'IN'
 server    = '8.8.8.8'
 port      = 53
 tcp       = 0
-debug     = 0
+debug     = 1
 ##########################
 
 #Connection to upstream dns server
@@ -308,56 +381,42 @@ upstr.connect((server, port))
 #Listen for a query here
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(('', 53))
+print("Server listening\n")
 while True:
-   request = s.recv(4096)
-   parsed  = parse_packet(request)
-   cltxid  = parsed['TXID']
-   qname   = parsed['Question'][0]['QNAME']
-   qtype   = parsed['Question'][0]['QTYPE']
-   qclass  = parsed['Question'][0]['QCLASS']
+    #Receive and parse client query
+    request, cladd = s.recvfrom(4096)
+    if debug: print("Received client query")
+    parsed  = parse_packet(request)
+    cltxid  = parsed['TXID']
+    qname   = parsed['Question'][0]['QNAME']
+    qtype   = parsed['Question'][0]['QTYPE']
+    qclass  = parsed['Question'][0]['QCLASS']
+    if debug: print("Client query parsed\n")
 
-   #Build and send query upstream
-   header  = gen_header_std_query()
-   query   = gen_question(qname, qtype, qclass)
-   packet  = gen_packet(header, query)
-   upstr.sendall(packet)
+    #Build and send query upstream
+    if debug: print("Generating upstream query")
+    header  = gen_header_std_query()
+    query   = gen_question(qname, qtype, qclass)
+    packet  = gen_packet(header, query)
+    upstr.sendall(packet)
+    if debug: print("Sent upstream query\n")
 
-   #Receive and parse upstream response
-   packet = upstr.recv(4096)
-   parsed = parse_packet(packet)
+    #Receive and parse upstream response
+    packet = upstr.recv(4096)
+    if debug: print("Received upstream response")
+    parsed = parse_packet(packet)
+    QDCount = parsed['QDCount']
+    ANCount = parsed['ANCount']
+    NSCount = parsed['NSCount']
+    ARCount = parsed['ARCount']
+    if debug: print("Upstream response parsed\n")
 
-   #Build and send client response
-
-   s.send()
-   s.close()
-
-
-
-
-
-
-
-
-sys.exit(0)
-#Original Code. Here for reference while I incorporate it above
-sock_type = socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
-conn = socket.socket(socket.AF_INET, sock_type)
-conn.connect((server, port))
-
-trans_id = gen_trans_id()
-flags    = gen_flags(QR, OpCode, AA, TC, RD, RA, Z, RCode)
-header   = gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount)
-#header    = gen_header_std_query()
-query    = gen_question(qname, qtype, qclass)
-packet   = gen_packet(header, query)
-if not tcp and len(packet) > 512:
-    print("Packet length too large for UDP, Sending as TCP...")
-    tcp = 1
-if tcp:
-    packet_len = len(packet).to_bytes(2, byteorder='big')
-    packet = packet_len + packet
-
-conn.sendall(packet)
-packet = conn.recv(4096)
-parsed = parse_packet(packet)
-print(json.dumps(parsed, indent=2))
+    #Build and send client response
+    if debug: print("Generating client response")
+    flags    = gen_flags(1, 0, 0, TC, 1, 1, 0, 0)
+    cltxid   = cltxid.to_bytes(2, 'big')#Make the gen_header function do this
+    header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
+    response = gen_RRs(parsed)
+    packet   = gen_packet(header, response)
+    s.sendto(packet, cladd)
+    if debug: print("Sent client response\n\n")
