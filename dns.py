@@ -30,12 +30,12 @@ qtypes = {'A'    :  1,
 
 qclasses = {'IN': 1}
 
-rcodes= {0: "No error condition",
-         1: "Format error",
-         2: "Server failure",
-         3: "Name error",
-         4: "Not implemented",
-         5: "Refused"}
+rcodes= {0: "No Error",
+         1: "Format Error",
+         2: "Server Failure",
+         3: "Non-Existent Domain",
+         4: "Not Implemented",
+         5: "Query Refused"}
 
 def gen_packet(header, query):
     return header + query
@@ -106,8 +106,7 @@ def parse_name(start, packet):
 def skip_name(start, data):
     while data[start] > 0:
         if data[start] >= 0xc0:
-            start += 1
-            break
+            return start +2
         start += 1
     return start + 1
 
@@ -189,13 +188,18 @@ def parse_rdata(qtype, start, data):
 
 def parse_packet(packet):
     ret = {}
+    pkt_len = len(packet) #Length of the packet received 
     if(tcp):
-        length = int.from_bytes(packet[:2], 'big')
+        enc_len = int.from_bytes(packet[:2], 'big') #Encoded packet length
+        pkt_len = pkt_len - 2
         packet = packet[2:]
+        if pkt_len != enc_len:
+            print("Packet length mismatch. Aborting...")
+            sys.exit(1)
     
     #parse header
     if len(packet) < 12:
-        print("Packet too short. Aborting...")
+        print("Packet length too short. Aborting...")
         sys.exit(1)
     header = packet[:12]
     trans_id = int.from_bytes(header[:2], 'big')
@@ -282,7 +286,7 @@ qclass    = 'IN'
 #MISC
 server    = '172.20.120.20'
 port      = 53
-tcp       = 0
+tcp       = 1
 debug     = 0
 ##########################
 
