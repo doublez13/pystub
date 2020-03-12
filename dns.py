@@ -218,7 +218,6 @@ def gen_rdata(data):
         rdata  += size.to_bytes(2, byteorder='big')
         rdata  += gen_name(cname)
     elif qtype == 'SOA':
-        {'MNAME': 'a1-21.akam.net', 'RNAME': 'hostmaster.newegg.com', 'SERIAL': 2013113677, 'REFRESH': 900, 'RETRY': 600, 'EXPIRE': 604800, 'MINIMUM': 0, 'QNAME': 'newegg.com', 'QTYPE': 'SOA', 'QCLASS': 'IN', 'TTL': 3599}
         if debug: print("Building SOA record")
         size    = len(data['MNAME']) + len(data['RNAME']) + 4*5
         mname   = gen_name(data['MNAME'])
@@ -230,6 +229,13 @@ def gen_rdata(data):
         minimum = data['MINIMUM'].to_bytes(4, byteorder='big')
         rdata  += size.to_bytes(2, byteorder='big')
         rdata  += mname + rname + serial + refresh + retry + expire + minimum
+    elif qtype == 'MX':
+        if debug: print("Building MX record")
+        size = len(data['EXCHANGE']) + 2
+        pref = data['PREFERENCE'].to_bytes(2, byteorder='big')
+        exch = gen_name(data['EXCHANGE'])
+        rdata  += size.to_bytes(2, byteorder='big')
+        rdata  += pref + exch
     else:
         print("Parsing not implmented for record type: " + str(qtype))
         print(data)
@@ -370,7 +376,7 @@ qclass    = 'IN'
 server    = '8.8.8.8'
 port      = 53
 tcp       = 0
-debug     = 1
+debug     = 0
 ##########################
 
 #Connection to upstream dns server
