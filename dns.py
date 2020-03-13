@@ -11,18 +11,9 @@ import json
 
 qtypes = {'A'    :  1,
           'NS'   :  2,
-          'MD'   :  3,
-          'MF'   :  4,
           'CNAME':  5,
           'SOA'  :  6,
-          'MB'   :  7,
-          'MG'   :  8,
-          'MR'   :  9,
-          'NULL' : 10,
-          'WKS'  : 11,
           'PTR'  : 12,
-          'HINFO': 13,
-          'MINFO': 14,
           'MX'   : 15,
           'TXT'  : 16,
           'AAAA' : 28,
@@ -72,12 +63,18 @@ def parse_flags(flags):
 
 #Find key by value in qtypes and qclasses
 def qtype_int_to_name(qint):
-  return {v: k for k, v in qtypes.items()}[qint]
+  rev = {v: k for k, v in qtypes.items()}
+  if qint in rev: return rev[qint]
+  return None
 
 def qclass_int_to_name(qint):
-  return {v: k for k, v in qclasses.items()}[qint]
+  rev = {v: k for k, v in qclasses.items()}
+  if qint in rev: return rev[qint]
+  return None
 
 def gen_name(qname):
+    if not isinstance(qname, str):
+        return null
     if len(qname) > 253:
         return null
     dns_name = str.encode('')
@@ -97,32 +94,42 @@ def gen_ptr(qname):
 def parse_name(start, packet):
     name_str = ''
     i = start
-    while packet[i] > 0:
-        if(packet[i] >= 0xc0):
-            if debug: print("Compressed name received. Following reference")
-            offset = int.from_bytes(packet[i:i+2], 'big') & 2**14-1
-            name_str += parse_name(offset, packet)
+    while i < len(packet): 
+        if packet[i] > 0:
+            if(packet[i] >= 0xc0):
+                if debug: print("Compressed name received. Following reference")
+                offset = int.from_bytes(packet[i:i+2], 'big') & 2**14-1
+                name_str += parse_name(offset, packet)
+                return name_str
+            count = packet[i]
+            name_bytes = packet[i+1:i+count+1]
+            if any(byte > 127 for byte in name_bytes):
+                print("Non ascii character received. This is not supported yet")
+                return None
+            name_str += name_bytes.decode("ascii")
+            name_str += '.'
+            i+=count+1
+        else:
+            name_str = name_str[:-1]
             return name_str
-        count = packet[i]
-        name_str += packet[i+1:i+count+1].decode("ascii")
-        name_str += '.'
-        i+=count+1
-    name_str = name_str[:-1]
-    return name_str
+    return None
 
 def skip_name(start, data):
-    while data[start] > 0:
-        if data[start] >= 0xc0:
-            return start +2
-        start += 1
-    return start + 1
+    i = start
+    while data[i] > 0:
+        if data[i] >= 0xc0:
+            return i +2
+        i += 1
+    return i + 1
 
 def gen_question(qname, qtype, qclass):
-    if qtype in qtypes.keys():
-        query = gen_name(qname)
-    else:
-        print("Support not implmented for record type: " + qtype)
-        sys.exit(1)
+    if qtype not in qtypes.keys():
+        print("Support not implemented for record type: " + str(qtype))
+        return None
+    query = gen_name(qname)
+    if qclass not in qclasses.keys():
+        print("Support not implemented for query class type: " + str(qclass))
+        return None
     query += qtypes[qtype].to_bytes(2, byteorder='big')
     query += qclasses[qclass].to_bytes(2, byteorder='big')
     return query
@@ -329,8 +336,9 @@ def parse_packet(packet):
 
     RCode = flags["RCode"]
     if RCode not in rcodes:
-        print("RCode not implemented. Aborting...")
-        sys.exit(1)
+        print("RCode not implemented.")
+        ret['ERROR'] = "RCode not implemented"
+        return ret
 
     ret['RCODE']   = rcodes[RCode]
     ret['TXID']    = trans_id
@@ -340,11 +348,12 @@ def parse_packet(packet):
     ret['ARCount'] = ARCount
 
     pos = 12
+    ret['Question'] = []
     if(QDCount):
         if debug: print("Packet query section. Parsing...")
         if QDCount > 1:
-            print("QDCount > 1 not supported. Aborting...")
-            sys.exit(1)
+            print("QDCount > 1 not supported. Disregarding additional queries")
+            QDcount = 1
         qdata = parse_question(pos, packet)
         pos   = skip_name(pos, packet)+4
         #Probably not going to support multiple queries, but storing in list anyway
@@ -401,7 +410,7 @@ qtype     = 'A'
 qclass    = 'IN'
 
 #MISC
-server    = '172.20.120.20'
+server    = '155.98.111.144'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -423,7 +432,13 @@ while True:
     print(query_num)
     if debug: print(str(query_num) + ": Received client query")
     parsed  = parse_packet(request)
+    if 'ERROR' in parsed:
+        print(parsed['ERROR'])#TODO: send back proper reply
+        continue
     cltxid  = parsed['TXID']
+    if len(parsed['Question']) == 0:
+        print("Empty query") #TODO: send back proper reply
+        continue
     qname   = parsed['Question'][0]['QNAME']
     qtype   = parsed['Question'][0]['QTYPE']
     qclass  = parsed['Question'][0]['QCLASS']
@@ -433,6 +448,9 @@ while True:
     if debug: print(str(query_num) + " Generating upstream query")
     header  = gen_header_std_query()
     query   = gen_question(qname, qtype, qclass)
+    if query is None:
+        print("Error generating query.")
+        continue
     packet  = gen_packet(header, query)
     upstr.sendall(packet)
     if debug: print(str(query_num) + ": Sent upstream query\n")
