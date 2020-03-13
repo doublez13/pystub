@@ -118,9 +118,7 @@ def skip_name(start, data):
     return start + 1
 
 def gen_question(qname, qtype, qclass):
-    if qtype == 'PTR':
-        query = gen_ptr(qname)
-    elif qtype in qtypes.keys():
+    if qtype in qtypes.keys():
         query = gen_name(qname)
     else:
         print("Support not implmented for record type: " + qtype)
@@ -207,21 +205,19 @@ def gen_rdata(data):
           rdata += int(add[i]).to_bytes(1, 'big')
     elif qtype == 'NS':
         if debug: print("Building NS record")
-        nsdname = data['NSDNAME']
-        size    = len(nsdname)
-        rdata  += size.to_bytes(2, byteorder='big')
-        rdata  += gen_name(nsdname)
+        nsdname = gen_name(data['NSDNAME'])
+        rdata   += len(nsdname).to_bytes(2, byteorder='big')
+        rdata   += nsdname
     elif qtype == 'CNAME':
         if debug: print("Building CNAME record")
-        cname   = data['CNAME']
-        size    = len(cname)
-        rdata  += size.to_bytes(2, byteorder='big')
-        rdata  += gen_name(cname)
+        cname  = gen_name(data['CNAME'])
+        rdata += len(cname).to_bytes(2, byteorder='big')
+        rdata += cname
     elif qtype == 'SOA':
         if debug: print("Building SOA record")
-        size    = len(data['MNAME']) + len(data['RNAME']) + 4*5
         mname   = gen_name(data['MNAME'])
         rname   = gen_name(data['RNAME'])
+        size    = len(mname) + len(rname) + 4*5
         serial  = data['SERIAL'].to_bytes(4, byteorder='big')
         refresh = data['REFRESH'].to_bytes(4, byteorder='big')
         retry   = data['RETRY'].to_bytes(4, byteorder='big')
@@ -229,13 +225,45 @@ def gen_rdata(data):
         minimum = data['MINIMUM'].to_bytes(4, byteorder='big')
         rdata  += size.to_bytes(2, byteorder='big')
         rdata  += mname + rname + serial + refresh + retry + expire + minimum
+    elif qtype == 'PTR':
+        if debug: print("Building PTR record")
+        ptrdname = gen_name(data['PTRDNAME'])
+        rdata += len(ptrdname).to_bytes(2, byteorder='big')
+        rdata += ptrdname
     elif qtype == 'MX':
         if debug: print("Building MX record")
-        size = len(data['EXCHANGE']) + 2
         pref = data['PREFERENCE'].to_bytes(2, byteorder='big')
         exch = gen_name(data['EXCHANGE'])
+        size = len(exch) + 2
         rdata  += size.to_bytes(2, byteorder='big')
         rdata  += pref + exch
+    elif qtype == 'TXT':
+        if debug: print("Parsing TXT record")
+        txtdata = data['TXT-DATA']
+        tot_len = 0
+        tmp = str.encode('')
+        for entry in txtdata:
+            length  = len(entry).to_bytes(1, byteorder='big')
+            val     = str.encode(entry)
+            tmp     += length + val
+            tot_len += 1 + len(val)
+        rdata += tot_len.to_bytes(2, byteorder='big')
+        rdata += tmp
+    elif qtype == 'AAAA':
+        if debug: print("Building AAAA record")
+        size   = 16
+        rdata += size.to_bytes(2, byteorder='big')
+        aaaa   = data['AAAA_ADDRESS']
+        for group in aaaa.split(':'): rdata += bytes.fromhex(group)
+    elif qtype == 'SRV':
+        if debug: print("Building SRV record")
+        priority = data['PRIORITY'].to_bytes(2, byteorder='big')
+        weight   = data['WEIGHT'].to_bytes(2, byteorder='big')
+        port     = data['PORT'].to_bytes(2, byteorder='big')
+        target   = gen_name(data['TARGET'])
+        size     = 6 + len(target)
+        rdata   += size.to_bytes(2, byteorder='big')
+        rdata   += priority + weight + port + target
     else:
         print("Parsing not implmented for record type: " + str(qtype))
         print(data)
@@ -373,7 +401,7 @@ qtype     = 'A'
 qclass    = 'IN'
 
 #MISC
-server    = '8.8.8.8'
+server    = '172.20.120.20'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -388,41 +416,44 @@ upstr.connect((server, port))
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(('', 53))
 print("Server listening\n")
+query_num = 0
 while True:
     #Receive and parse client query
     request, cladd = s.recvfrom(4096)
-    if debug: print("Received client query")
+    print(query_num)
+    if debug: print(str(query_num) + ": Received client query")
     parsed  = parse_packet(request)
     cltxid  = parsed['TXID']
     qname   = parsed['Question'][0]['QNAME']
     qtype   = parsed['Question'][0]['QTYPE']
     qclass  = parsed['Question'][0]['QCLASS']
-    if debug: print("Client query parsed\n")
+    if debug: print(str(query_num) + ": Client query parsed\n")
 
     #Build and send query upstream
-    if debug: print("Generating upstream query")
+    if debug: print(str(query_num) + " Generating upstream query")
     header  = gen_header_std_query()
     query   = gen_question(qname, qtype, qclass)
     packet  = gen_packet(header, query)
     upstr.sendall(packet)
-    if debug: print("Sent upstream query\n")
+    if debug: print(str(query_num) + ": Sent upstream query\n")
 
     #Receive and parse upstream response
     packet = upstr.recv(4096)
-    if debug: print("Received upstream response")
+    if debug: print(str(query_num) + ": Received upstream response")
     parsed = parse_packet(packet)
     QDCount = parsed['QDCount']
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
     ARCount = parsed['ARCount']
-    if debug: print("Upstream response parsed\n")
+    if debug: print(str(query_num) + ": Upstream response parsed\n")
 
     #Build and send client response
-    if debug: print("Generating client response")
+    if debug: print(str(query_num) + ": Generating client response")
     flags    = gen_flags(1, 0, 0, TC, 1, 1, 0, 0)
     cltxid   = cltxid.to_bytes(2, 'big')#Make the gen_header function do this
     header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
     response = gen_RRs(parsed)
     packet   = gen_packet(header, response)
     s.sendto(packet, cladd)
-    if debug: print("Sent client response\n\n")
+    if debug: print(str(query_num) + ": Sent client response\n\n")
+    query_num += 1
