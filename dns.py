@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3.6
+#!/usr/bin/python3
 #Python implementation of RFC 1035 just for fun
 #https://tools.ietf.org/html/rfc1035
 #
@@ -41,6 +41,15 @@ def gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount):
 def gen_header_std_query():
     return gen_header(gen_trans_id(), gen_flags_std_query(), 1, 0, 0, 0)
 
+
+#QR     : Query: 0, Response: 1
+#OpCode : Standard Query: 0000, Inverse Query: 0100
+#AA     : Authoritative Answer
+#TC     : Is Message truncated
+#RD     : Do query recursively
+#RA     : Is recursive support available in the NS
+#Z      : Reserved
+#RCode  : Response Code
 def gen_flags(QR, OpCode, AA, TC, RD, RA, Z, RCode):
     flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
     return flags.to_bytes(2, byteorder='big')
@@ -197,7 +206,7 @@ def parse_rdata(qtype, start, data):
         rdata['TARGET']   = parse_name(start+6, data)
     else:
         print("Parsing not implmented for record type: " + str(qtype))
-        rdata['ERROR'] = "Parsing not implmented for record type: " + str(qtype)
+        rdata = None
     return rdata
 
 def gen_rdata(data):
@@ -317,13 +326,15 @@ def parse_packet(packet):
         pkt_len = pkt_len - 2
         packet = packet[2:]
         if pkt_len != enc_len:
-            print("Packet length mismatch. Aborting...")
-            sys.exit(1)
+            print("Packet length mismatch.")
+            ret['ERROR'] = "Packet length mismatch."
+            return ret
     
     #parse header
     if len(packet) < 12:
         print("Packet length too short. Aborting...")
-        sys.exit(1)
+        ret['ERROR'] = "Packet length too short"
+        return ret
     header = packet[:12]
     trans_id = int.from_bytes(header[:2], 'big')
     flags    = int.from_bytes(header[2:4], 'big')
@@ -378,6 +389,11 @@ def parse_packet(packet):
             RDlength = int.from_bytes(packet[end+8:end+10], 'big')
             end += 10
             RData = parse_rdata(qtype, end, packet)
+            if RData is None: #unable to parse rdata record. Decrement appropriate count
+                if   section == 'Answer':     ret['ANCount'] -= 1
+                elif section == 'Authority':  ret['NSCount'] -= 1
+                elif section == 'Additional': ret['ARCount'] -= 1
+                continue
             RData['QNAME']  = qname
             RData['QTYPE']  = qtype_int_to_name(qtype)
             RData['QCLASS'] = qclass_int_to_name(qclass)
@@ -387,30 +403,8 @@ def parse_packet(packet):
             pos = end
     return ret
 
-######QUERY SETTINGS######
-#FLAGS
-QR        = 0 #Query: 0, Response: 1
-OpCode    = 0 #Standard Query: 0000, Inverse Query: 0100
-AA        = 0 #Authoritative Answer
-TC        = 0 #Is Message truncated
-RD        = 1 #Do query recursively
-RA        = 0 #Is recursive support available in the NS
-Z         = 0 #Reserved
-RCode     = 0 #Response Code
-
-#COUNTS
-QDCount   = 1 
-ANCount   = 0
-NSCount   = 0
-ARCount   = 0
-
-#QUERY
-qname     = 'www.google.com'
-qtype     = 'A'
-qclass    = 'IN'
-
-#MISC
-server    = '155.98.111.144'
+######UPSTREAM SETTINGS######
+server    = '192.168.0.9'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -467,7 +461,7 @@ while True:
 
     #Build and send client response
     if debug: print(str(query_num) + ": Generating client response")
-    flags    = gen_flags(1, 0, 0, TC, 1, 1, 0, 0)
+    flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
     cltxid   = cltxid.to_bytes(2, 'big')#Make the gen_header function do this
     header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
     response = gen_RRs(parsed)
