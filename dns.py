@@ -83,14 +83,14 @@ def qclass_int_to_name(qint):
 
 def gen_name(qname):
     if not isinstance(qname, str):
-        return null
+        return None
     if len(qname) > 253:
-        return null
+        return None
     dns_name = str.encode('')
     parts = qname.split('.')
     for part in parts:
         if len(part) > 63:
-            return null
+            return None
         dns_name += str.encode(chr(len(part))+part)
     dns_name += str.encode(chr(0))
     return dns_name
@@ -108,7 +108,10 @@ def parse_name(start, packet):
             if(packet[i] >= 0xc0):
                 if debug: print("Compressed name received. Following reference")
                 offset = int.from_bytes(packet[i:i+2], 'big') & 2**14-1
-                name_str += parse_name(offset, packet)
+                parsed = parse_name(offset, packet)
+                if parsed is None:
+                    return parsed
+                name_str += parsed
                 return name_str
             count = packet[i]
             name_bytes = packet[i+1:i+count+1]
@@ -125,17 +128,23 @@ def parse_name(start, packet):
 
 def skip_name(start, data):
     i = start
-    while data[i] > 0:
-        if data[i] >= 0xc0:
-            return i +2
-        i += 1
-    return i + 1
+    while i < len(data):
+        if data[i] > 0:
+            if data[i] >= 0xc0:
+                return i + 2
+            i += 1
+        else:
+            return i + 1
+    return -1
 
 def gen_question(qname, qtype, qclass):
+    query = gen_name(qname)
+    if query is None:
+        print("Invalid query name given")
+        return None
     if qtype not in qtypes.keys():
         print("Support not implemented for record type: " + str(qtype))
         return None
-    query = gen_name(qname)
     if qclass not in qclasses.keys():
         print("Support not implemented for query class type: " + str(qclass))
         return None
@@ -146,11 +155,13 @@ def gen_question(qname, qtype, qclass):
 def parse_question(start, data):
     qname  = parse_name(start, data)
     pos    = skip_name(start, data)
+    if pos < 0:
+        return {'ERROR':'Malformed packet'}
     qtype  = int.from_bytes(data[pos:pos+2], 'big')
     qtype  = qtype_int_to_name(qtype)
     qclass = int.from_bytes(data[pos+2:pos+4], 'big')
     qclass = qclass_int_to_name(qclass)
-    return (qname, qtype, qclass)
+    return {'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass}
 
 def gen_trans_id():
     return random.randrange(2**16-1).to_bytes(2, byteorder='big')
@@ -332,7 +343,7 @@ def parse_packet(packet):
     
     #parse header
     if len(packet) < 12:
-        print("Packet length too short. Aborting...")
+        print("Packet length too short.")
         ret['ERROR'] = "Packet length too short"
         return ret
     header = packet[:12]
@@ -364,12 +375,16 @@ def parse_packet(packet):
         if debug: print("Packet query section. Parsing...")
         if QDCount > 1:
             print("QDCount > 1 not supported. Disregarding additional queries")
+            ret['QDCount'] = 1
             QDcount = 1
         qdata = parse_question(pos, packet)
+        if 'ERROR' in qdata:
+            ret['ERROR'] = qdata['ERROR']
+            return ret
         pos   = skip_name(pos, packet)+4
         #Probably not going to support multiple queries, but storing in list anyway
         ret['Question'] = []
-        ret['Question'].append({'QNAME':qdata[0], "QTYPE":qdata[1], 'QCLASS':qdata[2]})
+        ret['Question'].append(qdata)
     for section in ('Answer', 'Authority', "Additional"):
         if section == 'Answer':
             count = ANCount
@@ -380,9 +395,11 @@ def parse_packet(packet):
         if count and debug: print("Response contains " + section + " section. Parsing...")
         ret[section] = []
         for i in range(count):
-            end      = pos
-            end      = skip_name(end, packet)
+            end      = skip_name(pos, packet)
             qname    = parse_name(pos, packet)
+            if len(packet) < end+10:
+                ret['ERROR'] = "Malformed packet"
+                return ret
             qtype    = int.from_bytes(packet[end:end+2], 'big')
             qclass   = int.from_bytes(packet[end+2:end+4], 'big')
             ttl      = int.from_bytes(packet[end+4:end+8], 'big')
@@ -404,7 +421,7 @@ def parse_packet(packet):
     return ret
 
 ######UPSTREAM SETTINGS######
-server    = '192.168.0.9'
+server    = '192.168.0.8'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -421,6 +438,7 @@ s.bind(('', 53))
 print("Server listening\n")
 query_num = 0
 while True:
+    query_num += 1
     #Receive and parse client query
     request, cladd = s.recvfrom(4096)
     print(query_num)
@@ -443,7 +461,7 @@ while True:
     header  = gen_header_std_query()
     query   = gen_question(qname, qtype, qclass)
     if query is None:
-        print("Error generating query.")
+        print("Error generating query.") #TODO: send back proper reply
         continue
     packet  = gen_packet(header, query)
     upstr.sendall(packet)
@@ -468,4 +486,3 @@ while True:
     packet   = gen_packet(header, response)
     s.sendto(packet, cladd)
     if debug: print(str(query_num) + ": Sent client response\n\n")
-    query_num += 1
