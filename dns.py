@@ -114,6 +114,9 @@ def parse_name(start, packet):
                 name_str += parsed
                 return name_str
             count = packet[i]
+            if len(packet) < i+count+1:
+                print("Malformed name")
+                return None
             name_bytes = packet[i+1:i+count+1]
             if any(byte > 127 for byte in name_bytes):
                 print("Non ascii character received. This is not supported yet")
