@@ -153,14 +153,20 @@ def gen_question(qname, qtype, qclass):
     return query
 
 def parse_question(start, data):
-    qname  = parse_name(start, data)
-    pos    = skip_name(start, data)
-    if pos < 0:
+    qname = parse_name(start, data)
+    if qname is None:
+        return {'ERROR':'Error parsing qname'}
+    pos = skip_name(start, data)
+    if pos < 0 or len(data) < pos+4:
         return {'ERROR':'Malformed packet'}
     qtype  = int.from_bytes(data[pos:pos+2], 'big')
     qtype  = qtype_int_to_name(qtype)
+    if qtype is None:
+        return {'ERROR':'Unsupported qtype'}
     qclass = int.from_bytes(data[pos+2:pos+4], 'big')
     qclass = qclass_int_to_name(qclass)
+    if qclass is None: 
+        return {'ERROR':'Unsupported qclass'}
     return {'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass}
 
 def gen_trans_id():
@@ -216,7 +222,7 @@ def parse_rdata(qtype, start, data):
         rdata['PORT']     = int.from_bytes(data[start+4:start+6], 'big')
         rdata['TARGET']   = parse_name(start+6, data)
     else:
-        print("Parsing not implmented for record type: " + str(qtype))
+        print("Parsing not implemented for record type: " + str(qtype))
         rdata = None
     return rdata
 
@@ -381,7 +387,7 @@ def parse_packet(packet):
         if 'ERROR' in qdata:
             ret['ERROR'] = qdata['ERROR']
             return ret
-        pos   = skip_name(pos, packet)+4
+        pos = skip_name(pos, packet)+4
         #Probably not going to support multiple queries, but storing in list anyway
         ret['Question'] = []
         ret['Question'].append(qdata)
@@ -395,8 +401,8 @@ def parse_packet(packet):
         if count and debug: print("Response contains " + section + " section. Parsing...")
         ret[section] = []
         for i in range(count):
-            end      = skip_name(pos, packet)
-            qname    = parse_name(pos, packet)
+            qname = parse_name(pos, packet)
+            end   = skip_name(pos, packet)
             if len(packet) < end+10:
                 ret['ERROR'] = "Malformed packet"
                 return ret
@@ -410,12 +416,12 @@ def parse_packet(packet):
                 if   section == 'Answer':     ret['ANCount'] -= 1
                 elif section == 'Authority':  ret['NSCount'] -= 1
                 elif section == 'Additional': ret['ARCount'] -= 1
-                continue
-            RData['QNAME']  = qname
-            RData['QTYPE']  = qtype_int_to_name(qtype)
-            RData['QCLASS'] = qclass_int_to_name(qclass)
-            RData['TTL']    = ttl
-            ret[section].append(RData)
+            else:
+                RData['QNAME']  = qname
+                RData['QTYPE']  = qtype_int_to_name(qtype)
+                RData['QCLASS'] = qclass_int_to_name(qclass)
+                RData['TTL']    = ttl
+                ret[section].append(RData)
             end += RDlength
             pos = end
     return ret
@@ -445,7 +451,7 @@ while True:
     if debug: print(str(query_num) + ": Received client query")
     parsed  = parse_packet(request)
     if 'ERROR' in parsed:
-        print(parsed['ERROR'])#TODO: send back proper reply
+        print('ERROR: '+parsed['ERROR'])#TODO: send back proper reply
         continue
     cltxid  = parsed['TXID']
     if len(parsed['Question']) == 0:
@@ -463,7 +469,7 @@ while True:
     if query is None:
         print("Error generating query.") #TODO: send back proper reply
         continue
-    packet  = gen_packet(header, query)
+    packet = gen_packet(header, query)
     upstr.sendall(packet)
     if debug: print(str(query_num) + ": Sent upstream query\n")
 
