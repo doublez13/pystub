@@ -402,16 +402,16 @@ def parse_packet(packet):
         ret[section] = []
         for i in range(count):
             qname = parse_name(pos, packet)
-            end   = skip_name(pos, packet)
-            if len(packet) < end+10:
+            pos   = skip_name(pos, packet)
+            if len(packet) < pos+10:
                 ret['ERROR'] = "Malformed packet"
                 return ret
-            qtype    = int.from_bytes(packet[end:end+2], 'big')
-            qclass   = int.from_bytes(packet[end+2:end+4], 'big')
-            ttl      = int.from_bytes(packet[end+4:end+8], 'big')
-            RDlength = int.from_bytes(packet[end+8:end+10], 'big')
-            end += 10
-            RData = parse_rdata(qtype, end, packet)
+            qtype    = int.from_bytes(packet[pos:pos+2], 'big')
+            qclass   = int.from_bytes(packet[pos+2:pos+4], 'big')
+            ttl      = int.from_bytes(packet[pos+4:pos+8], 'big')
+            RDlength = int.from_bytes(packet[pos+8:pos+10], 'big')
+            pos += 10
+            RData = parse_rdata(qtype, pos, packet)
             if RData is None: #unable to parse rdata record. Decrement appropriate count
                 if   section == 'Answer':     ret['ANCount'] -= 1
                 elif section == 'Authority':  ret['NSCount'] -= 1
@@ -422,8 +422,7 @@ def parse_packet(packet):
                 RData['QCLASS'] = qclass_int_to_name(qclass)
                 RData['TTL']    = ttl
                 ret[section].append(RData)
-            end += RDlength
-            pos = end
+            pos += RDlength
     return ret
 
 ######UPSTREAM SETTINGS######
