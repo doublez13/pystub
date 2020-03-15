@@ -72,14 +72,22 @@ def parse_flags(flags):
 
 #Find key by value in qtypes and qclasses
 def qtype_int_to_name(qint):
-  rev = {v: k for k, v in qtypes.items()}
-  if qint in rev: return rev[qint]
-  return None
+    rev = {v: k for k, v in qtypes.items()}
+    if qint in rev: return rev[qint]
+    return None
 
 def qclass_int_to_name(qint):
-  rev = {v: k for k, v in qclasses.items()}
-  if qint in rev: return rev[qint]
-  return None
+    rev = {v: k for k, v in qclasses.items()}
+    if qint in rev: return rev[qint]
+    return None
+
+def qtype_name_to_int(qname):
+    if qname in qtypes: return qtypes[qname]
+    return None
+
+def qclass_name_to_int(qclass):
+    if qclass in qclasses: return qclasses[qclass]
+    return None
 
 def gen_name(qname):
     if not isinstance(qname, str):
@@ -365,6 +373,8 @@ def parse_packet(packet):
 
     flags = parse_flags(flags)
 
+    ret['TXID'] = trans_id
+
     RCode = flags["RCode"]
     if RCode not in rcodes:
         print("RCode not implemented.")
@@ -372,7 +382,6 @@ def parse_packet(packet):
         return ret
 
     ret['RCODE']   = rcodes[RCode]
-    ret['TXID']    = trans_id
     ret['QDCount'] = QDCount
     ret['ANCount'] = ANCount
     ret['NSCount'] = NSCount
@@ -430,7 +439,7 @@ def parse_packet(packet):
     return ret
 
 ######UPSTREAM SETTINGS######
-server    = '192.168.0.8'
+server    = '192.168.0.9'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -452,13 +461,34 @@ while True:
     request, cladd = s.recvfrom(4096)
     print(query_num)
     if debug: print(str(query_num) + ": Received client query")
-    parsed  = parse_packet(request)
+    parsed = parse_packet(request)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])#TODO: send back proper reply
+        if 'TXID' not in parsed:
+            continue #Drop packet since we can't even reply
+        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
+        if parsed['ERROR'] == "Unsupported qtype":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+        elif parsed['ERROR'] == "Unsupported qclass":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+        elif parsed['ERROR'] == "Malformed packet":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        elif parsed['ERROR'] == "Error parsing qname":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        elif parsed['ERROR'] == "RCode not implemented":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+        else: #Send back server failure if we don't have a better code
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendto(packet, cladd)
         continue
-    cltxid  = parsed['TXID']
+    cltxid = parsed['TXID']
     if len(parsed['Question']) == 0:
-        print("Empty query") #TODO: send back proper reply
+        print("Empty query")
+        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendto(packet, cladd)
         continue
     qname   = parsed['Question'][0]['QNAME']
     qtype   = parsed['Question'][0]['QTYPE']
@@ -470,7 +500,11 @@ while True:
     header  = gen_header_std_query()
     query   = gen_question(qname, qtype, qclass)
     if query is None:
-        print("Error generating query.") #TODO: send back proper reply
+        print("Error generating query.")
+        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendto(packet, cladd)
         continue
     packet = gen_packet(header, query)
     upstr.sendall(packet)
