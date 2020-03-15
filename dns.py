@@ -389,6 +389,7 @@ def parse_packet(packet):
         qdata = parse_question(pos, packet)
         if 'ERROR' in qdata:
             ret['ERROR'] = qdata['ERROR']
+            #TODO: Should we set QDCount to 0?
             return ret
         pos = skip_name(pos, packet)+4
         #Probably not going to support multiple queries, but storing in list anyway
@@ -479,6 +480,9 @@ while True:
     packet = upstr.recv(4096)
     if debug: print(str(query_num) + ": Received upstream response")
     parsed = parse_packet(packet)
+    if 'ERROR' in parsed:
+        print('ERROR: '+parsed['ERROR'])#TODO: send back proper reply
+        continue
     QDCount = parsed['QDCount']
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
