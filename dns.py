@@ -9,6 +9,8 @@ import random
 import sys
 import json
 
+debug = 0
+
 qtypes = {'A'    :  1,
           'NS'   :  2,
           'CNAME':  5,
@@ -450,107 +452,110 @@ def parse_packet(packet, sock_type):
 upstr_server = '8.8.8.8'
 upstr_port   = 53
 upstr_tcp    = 1
-debug        = 0
-##########################
+#############################
 
-#Listen for a query here
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(('', 53))
-print("Server listening\n")
-query_num = 0
-while True:
-    query_num += 1
-    #Receive and parse client query
-    request, cladd = s.recvfrom(4096)
-    print(query_num)
-    if debug: print(str(query_num) + ": Received client query")
-    parsed = parse_packet(request, 0)
-    if 'ERROR' in parsed:
-        print('ERROR: '+parsed['ERROR'])
-        if 'TXID' not in parsed:
-            continue #Drop packet since we can't even reply
-        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
-        if parsed['ERROR'] == "Unsupported qtype":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
-        elif parsed['ERROR'] == "Unsupported qclass":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
-        elif parsed['ERROR'] == "Malformed packet":
+def main():
+    #Listen for a query here
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('', 53))
+    print("Server listening\n")
+    query_num = 0
+    while True:
+        query_num += 1
+        #Receive and parse client query
+        request, cladd = s.recvfrom(4096)
+        print(query_num)
+        if debug: print(str(query_num) + ": Received client query")
+        parsed = parse_packet(request, 0)
+        if 'ERROR' in parsed:
+            print('ERROR: '+parsed['ERROR'])
+            if 'TXID' not in parsed:
+                continue #Drop packet since we can't even reply
+            cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
+            if parsed['ERROR'] == "Unsupported qtype":
+                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+            elif parsed['ERROR'] == "Unsupported qclass":
+                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+            elif parsed['ERROR'] == "Malformed packet":
+                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+            elif parsed['ERROR'] == "Error parsing qname":
+                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+            elif parsed['ERROR'] == "RCode not implemented":
+                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+            else: #Send back server failure if we don't have a better code
+                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+            s.sendto(packet, cladd)
+            continue
+        cltxid = parsed['TXID']
+        if len(parsed['Question']) == 0:
+            print("Empty query")
+            cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-        elif parsed['ERROR'] == "Error parsing qname":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-        elif parsed['ERROR'] == "RCode not implemented":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
-        else: #Send back server failure if we don't have a better code
+            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+            s.sendto(packet, cladd)
+            continue
+        qname   = parsed['Question'][0]['QNAME']
+        qtype   = parsed['Question'][0]['QTYPE']
+        qclass  = parsed['Question'][0]['QCLASS']
+        if debug: print(str(query_num) + ": Client query parsed\n")
+
+        #Build and send query upstream
+        if debug: print(str(query_num) + " Generating upstream query")
+        header  = gen_header_std_query()
+        query   = gen_question(qname, qtype, qclass)
+        if query is None:
+            print("Error generating query.")
+            cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendto(packet, cladd)
-        continue
-    cltxid = parsed['TXID']
-    if len(parsed['Question']) == 0:
-        print("Empty query")
-        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendto(packet, cladd)
-        continue
-    qname   = parsed['Question'][0]['QNAME']
-    qtype   = parsed['Question'][0]['QTYPE']
-    qclass  = parsed['Question'][0]['QCLASS']
-    if debug: print(str(query_num) + ": Client query parsed\n")
+            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+            s.sendto(packet, cladd)
+            continue
+        packet = gen_packet(header, query)
+        if upstr_tcp:
+            packet_len = len(packet).to_bytes(2, byteorder='big')
+            packet = packet_len + packet
+        up_sock_type = socket.SOCK_STREAM if upstr_tcp else socket.SOCK_DGRAM
+        upstr = socket.socket(socket.AF_INET, up_sock_type)
+        upstr.connect((upstr_server, upstr_port))
+        upstr.sendall(packet)
+        if debug: print(str(query_num) + ": Sent upstream query\n")
 
-    #Build and send query upstream
-    if debug: print(str(query_num) + " Generating upstream query")
-    header  = gen_header_std_query()
-    query   = gen_question(qname, qtype, qclass)
-    if query is None:
-        print("Error generating query.")
-        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendto(packet, cladd)
-        continue
-    packet = gen_packet(header, query)
-    if upstr_tcp:
-        packet_len = len(packet).to_bytes(2, byteorder='big')
-        packet = packet_len + packet
-    up_sock_type = socket.SOCK_STREAM if upstr_tcp else socket.SOCK_DGRAM
-    upstr = socket.socket(socket.AF_INET, up_sock_type)
-    upstr.connect((upstr_server, upstr_port))
-    upstr.sendall(packet)
-    if debug: print(str(query_num) + ": Sent upstream query\n")
+        #Receive and parse upstream response
+        packet = upstr.recv(4096)
+        upstr.close()
+        if debug: print(str(query_num) + ": Received upstream response")
+        parsed = parse_packet(packet, upstr_tcp)
+        if 'ERROR' in parsed:
+            if 'TXID' not in parsed:
+                continue #Drop packet since we can't even reply
+            print('ERROR: '+parsed['ERROR'])
+            cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+            s.sendto(packet, cladd)
+            continue
+        QDCount = parsed['QDCount']
+        ANCount = parsed['ANCount']
+        NSCount = parsed['NSCount']
+        ARCount = parsed['ARCount']
+        if debug: print(str(query_num) + ": Upstream response parsed\n")
 
-    #Receive and parse upstream response
-    packet = upstr.recv(4096)
-    upstr.close()
-    if debug: print(str(query_num) + ": Received upstream response")
-    parsed = parse_packet(packet, upstr_tcp)
-    if 'ERROR' in parsed:
-        if 'TXID' not in parsed:
-            continue #Drop packet since we can't even reply
-        print('ERROR: '+parsed['ERROR'])
-        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        #Build and send client response
+        if debug: print(str(query_num) + ": Generating client response")
+        flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
+        cltxid   = cltxid.to_bytes(2, 'big')#Make the gen_header function do this
+        header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
+        response = gen_RRs(parsed)
+        if response is None:
+            print("Error generating client response.")
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+            s.sendto(packet, cladd)
+            continue
+        packet = gen_packet(header, response)
         s.sendto(packet, cladd)
-        continue
-    QDCount = parsed['QDCount']
-    ANCount = parsed['ANCount']
-    NSCount = parsed['NSCount']
-    ARCount = parsed['ARCount']
-    if debug: print(str(query_num) + ": Upstream response parsed\n")
+        if debug: print(str(query_num) + ": Sent client response\n\n")
 
-    #Build and send client response
-    if debug: print(str(query_num) + ": Generating client response")
-    flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
-    cltxid   = cltxid.to_bytes(2, 'big')#Make the gen_header function do this
-    header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
-    response = gen_RRs(parsed)
-    if response is None:
-        print("Error generating client response.")
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendto(packet, cladd)
-        continue
-    packet = gen_packet(header, response)
-    s.sendto(packet, cladd)
-    if debug: print(str(query_num) + ": Sent client response\n\n")
+if __name__ == "__main__":
+    main()
