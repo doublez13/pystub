@@ -515,7 +515,11 @@ while True:
     if debug: print(str(query_num) + ": Received upstream response")
     parsed = parse_packet(packet)
     if 'ERROR' in parsed:
-        print('ERROR: '+parsed['ERROR'])#TODO: send back proper reply
+        print('ERROR: '+parsed['ERROR'])
+        cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendto(packet, cladd)
         continue
     QDCount = parsed['QDCount']
     ANCount = parsed['ANCount']
