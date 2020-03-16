@@ -25,7 +25,7 @@ Support for the following record types has been implemented with more to come so
 - AAAA
 - SRV
 
-#TODO:
+# TODO:
 - RFC 1035 compliance
 - Improve crash prevention in main
 - Add support for more record types
