@@ -350,10 +350,11 @@ def gen_RRs(data):
                 response += tmp_res
     return response
 
-def parse_packet(packet):
+def parse_packet(packet, sock_type):
     ret = {}
-    pkt_len = len(packet) #Length of the packet received 
-    if(tcp):
+    pkt_len = len(packet) #Length of the packet received
+    print("pkt_len:" + str(pkt_len))
+    if sock_type: #if tcp
         enc_len = int.from_bytes(packet[:2], 'big') #Encoded packet length
         pkt_len = pkt_len - 2
         packet = packet[2:]
@@ -446,16 +447,11 @@ def parse_packet(packet):
     return ret
 
 ######UPSTREAM SETTINGS######
-server    = '155.98.111.144'
-port      = 53
-tcp       = 0
-debug     = 0
+upstr_server = '8.8.8.8'
+upstr_port   = 53
+upstr_tcp    = 1
+debug        = 0
 ##########################
-
-#Connection to upstream dns server
-sock_type = socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
-upstr = socket.socket(socket.AF_INET, sock_type)
-upstr.connect((server, port))
 
 #Listen for a query here
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -468,7 +464,7 @@ while True:
     request, cladd = s.recvfrom(4096)
     print(query_num)
     if debug: print(str(query_num) + ": Received client query")
-    parsed = parse_packet(request)
+    parsed = parse_packet(request, 0)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
         if 'TXID' not in parsed:
@@ -514,14 +510,23 @@ while True:
         s.sendto(packet, cladd)
         continue
     packet = gen_packet(header, query)
+    if upstr_tcp:
+        packet_len = len(packet).to_bytes(2, byteorder='big')
+        packet = packet_len + packet
+    up_sock_type = socket.SOCK_STREAM if upstr_tcp else socket.SOCK_DGRAM
+    upstr = socket.socket(socket.AF_INET, up_sock_type)
+    upstr.connect((upstr_server, upstr_port))
     upstr.sendall(packet)
     if debug: print(str(query_num) + ": Sent upstream query\n")
 
     #Receive and parse upstream response
     packet = upstr.recv(4096)
+    upstr.close()
     if debug: print(str(query_num) + ": Received upstream response")
-    parsed = parse_packet(packet)
+    parsed = parse_packet(packet, upstr_tcp)
     if 'ERROR' in parsed:
+        if 'TXID' not in parsed:
+            continue #Drop packet since we can't even reply
         print('ERROR: '+parsed['ERROR'])
         cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
