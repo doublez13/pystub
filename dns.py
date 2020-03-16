@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #Python implementation of RFC 1035 just for fun
 #https://tools.ietf.org/html/rfc1035
 #
