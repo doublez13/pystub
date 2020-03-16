@@ -472,6 +472,10 @@ def upstream_connect(upstream):
     return upstr
 
 def main():
+    MIN_PYTHON = (3, 5)
+    if sys.version_info < MIN_PYTHON:
+      sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+
     #TODO: parse upsteams
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind(('', 53))
