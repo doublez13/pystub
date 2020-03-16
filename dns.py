@@ -309,7 +309,7 @@ def gen_rdata(data):
         rdata   += size.to_bytes(2, byteorder='big')
         rdata   += priority + weight + port + target
     else:
-        print("Parsing not implmented for record type: " + str(qtype))
+        print("Writing not implmented for record type: " + str(qtype))
         print(data)
     return rdata
 
@@ -320,6 +320,8 @@ def gen_RRs(data):
       qtype  = data['Question'][0]['QTYPE']
       qclass = data['Question'][0]['QCLASS']
       response = gen_name(qname)
+      if response is None:
+          return None
       response += qtypes[qtype].to_bytes(2, byteorder='big')
       response += qclasses[qclass].to_bytes(2, byteorder='big')
     for section in ['Answer', 'Authority', 'Additional']:
@@ -337,6 +339,8 @@ def gen_RRs(data):
             ttl    = data[section][i]['TTL']
 
             tmp_res  = gen_name(qname)
+            if response is None:
+                return None
             tmp_res += qtypes[qtype].to_bytes(2, byteorder='big')
             tmp_res += qclasses[qclass].to_bytes(2, byteorder='big')
             tmp_res += ttl.to_bytes(4, byteorder='big')
@@ -413,6 +417,9 @@ def parse_packet(packet):
             count = ARCount
         if count and debug: print("Response contains " + section + " section. Parsing...")
         ret[section] = []
+        if len(packet) < pos + count*10: #sanity check so we don't loop a crazy number of times on a malformed packet
+            ret['ERROR'] = "Malformed packet" #TODO: revisit this when we wire up truncation
+            return ret
         for i in range(count):
             qname = parse_name(pos, packet)
             pos   = skip_name(pos, packet)
@@ -439,7 +446,7 @@ def parse_packet(packet):
     return ret
 
 ######UPSTREAM SETTINGS######
-server    = '192.168.0.9'
+server    = '155.98.111.144'
 port      = 53
 tcp       = 0
 debug     = 0
@@ -463,7 +470,7 @@ while True:
     if debug: print(str(query_num) + ": Received client query")
     parsed = parse_packet(request)
     if 'ERROR' in parsed:
-        print('ERROR: '+parsed['ERROR'])#TODO: send back proper reply
+        print('ERROR: '+parsed['ERROR'])
         if 'TXID' not in parsed:
             continue #Drop packet since we can't even reply
         cltxid = parsed['TXID'].to_bytes(2, 'big')#Make the gen_header function do this
@@ -533,6 +540,12 @@ while True:
     cltxid   = cltxid.to_bytes(2, 'big')#Make the gen_header function do this
     header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
     response = gen_RRs(parsed)
-    packet   = gen_packet(header, response)
+    if response is None:
+        print("Error generating client response.")
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendto(packet, cladd)
+        continue
+    packet = gen_packet(header, response)
     s.sendto(packet, cladd)
     if debug: print(str(query_num) + ": Sent client response\n\n")
