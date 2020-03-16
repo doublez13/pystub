@@ -4,7 +4,9 @@ Pystub is basic DNS stub server written in python with support for DNS over TLS.
 # Running
 Pystub needs permission to bind on port 53.
 This can be achieved with CAP_NET_BIND_SERVICE
-`# /path/to/pystub`
+```
+# /path/to/pystub
+```
 
 # Upstream transports
 - UDP
