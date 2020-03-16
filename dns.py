@@ -8,6 +8,7 @@ import socket
 import random
 import sys
 import json
+import ssl
 
 debug = 0
 
@@ -449,13 +450,29 @@ def parse_packet(packet, sock_type):
     return ret
 
 ######UPSTREAM SETTINGS######
-upstr_server = '8.8.8.8'
-upstr_port   = 53
-upstr_tcp    = 1
+upstreams = [
+                {
+                 "address":'8.8.8.8',
+                 "tls_name":"dns.google",
+                 "port":853,
+                 "tcp":1
+                }
+            ]
 #############################
+def upstream_connect(upstream):
+    if len(upstream['tls_name']):
+        context = ssl.create_default_context()
+        up_sock_type = socket.SOCK_STREAM
+        sock  = socket.create_connection((upstream['address'], upstream['port']))
+        upstr = context.wrap_socket(sock, server_hostname=upstream['tls_name'])
+    else:
+        up_sock_type = socket.SOCK_STREAM if upstream["tcp"] else socket.SOCK_DGRAM
+        upstr = socket.socket(socket.AF_INET, up_sock_type)
+        upstr.connect((upstream["address"], upstream["port"]))
+    return upstr
 
 def main():
-    #Listen for a query here
+    #TODO: parse upsteams
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind(('', 53))
     print("Server listening\n")
@@ -512,12 +529,10 @@ def main():
             s.sendto(packet, cladd)
             continue
         packet = gen_packet(header, query)
-        if upstr_tcp:
+        upstr = upstream_connect(upstreams[0])
+        if str(upstr.type) == "SocketKind.SOCK_STREAM": #Fix the ugliness
             packet_len = len(packet).to_bytes(2, byteorder='big')
             packet = packet_len + packet
-        up_sock_type = socket.SOCK_STREAM if upstr_tcp else socket.SOCK_DGRAM
-        upstr = socket.socket(socket.AF_INET, up_sock_type)
-        upstr.connect((upstr_server, upstr_port))
         upstr.sendall(packet)
         if debug: print(str(query_num) + ": Sent upstream query\n")
 
@@ -525,7 +540,7 @@ def main():
         packet = upstr.recv(4096)
         upstr.close()
         if debug: print(str(query_num) + ": Received upstream response")
-        parsed = parse_packet(packet, upstr_tcp)
+        parsed = parse_packet(packet, upstreams[0]["tcp"])
         if 'ERROR' in parsed:
             if 'TXID' not in parsed:
                 continue #Drop packet since we can't even reply
