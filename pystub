@@ -208,7 +208,7 @@ def parse_rdata(qtype, start, data):
         rdata['REFRESH'] = int.from_bytes(data[start+4:start+8], 'big')
         rdata['RETRY']   = int.from_bytes(data[start+8:start+12], 'big')
         rdata['EXPIRE']  = int.from_bytes(data[start+12:start+16], 'big')
-        rdata['MINIMUM'] = int.from_bytes(data[start+20:start+24], 'big')
+        rdata['MINIMUM'] = int.from_bytes(data[start+16:start+20], 'big')
     elif qtype == qtypes['PTR']:
         if debug: print("Parsing PTR record")
         rdata['PTRDNAME'] = parse_name(start, data)
