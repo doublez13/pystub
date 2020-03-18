@@ -128,11 +128,6 @@ def gen_name(qname):
     dns_name += str.encode(chr(0))
     return dns_name
 
-def gen_ptr(qname):
-    parts = qname.split('.')
-    ptr = parts[3]+'.'+parts[2]+'.'+parts[1]+'.'+parts[0]+".in-addr.arpa"
-    return gen_name(ptr)
-
 def parse_name(start, packet):
     name_str = ''
     i = start
