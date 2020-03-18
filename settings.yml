@@ -1,0 +1,9 @@
+upstreams:
+  - address: "8.8.8.8"
+    tls_name: "dns.google"
+    port: 853
+    tcp: 1
+  - address: "8.8.4.4"
+    tls_name: "dns.google"
+    port: 853
+    tcp: 1

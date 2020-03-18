@@ -7,9 +7,10 @@
 import socket
 import random
 import sys
-import json
 import ssl
+import yaml
 
+config_file = './settings.yml'
 debug = 0
 
 qtypes = {'A'    :  1,
@@ -456,6 +457,9 @@ def parse_packet(packet, sock_type):
             ttl      = int.from_bytes(packet[pos+4:pos+8], 'big')
             RDlength = int.from_bytes(packet[pos+8:pos+10], 'big')
             pos += 10
+            if len(packet) < pos + RDlength:
+                ret['ERROR'] = "Malformed packet"
+                return ret
             RData = parse_rdata(qtype, pos, packet)
             if RData is None: #unable to parse rdata record. Decrement appropriate count
                 if   section == 'Answer':     ret['ANCount'] -= 1
@@ -471,15 +475,10 @@ def parse_packet(packet, sock_type):
     return ret
 
 ######UPSTREAM SETTINGS######
+#Server(s) used if none are specified in the settings file
 upstrm_cnfgs = [
                 {
                  "address":'8.8.8.8',
-                 "tls_name":"dns.google",
-                 "port":853,
-                 "tcp":1
-                },
-                {
-                 "address":'8.8.4.4',
                  "tls_name":"dns.google",
                  "port":853,
                  "tcp":1
@@ -491,6 +490,17 @@ def main():
     MIN_PYTHON = (3, 5)
     if sys.version_info < MIN_PYTHON:
       sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+
+    #Parse config
+    with open(config_file, "r") as c:
+        try:
+            config = yaml.safe_load(c)
+        except yaml.YAMLERROR as exc:
+            print(exc)
+            sys.exit(1)
+    global upstrm_cnfgs
+    if "upstreams" in config and len(config["upstreams"]) > 0:
+        upstrm_cnfgs = config["upstreams"]
 
     #Parse upstreams
     upstreams = []
