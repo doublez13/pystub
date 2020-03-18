@@ -31,6 +31,27 @@ rcodes= {0: "No Error",
          4: "Not Implemented",
          5: "Query Refused"}
 
+class upstream:
+    def __init__(self, addr, tls_name, port, tcp):
+        #TODO: verify valid input
+        self.address  = addr
+        self.tls_name = tls_name
+        self.port     = port
+        self.tcp      = 1 if len(tls_name) > 0 else tcp
+        self.tls      = 1 if len(tls_name) > 0 else 0
+        self.conn     = None
+
+    def connect(self):
+        if self.tls:
+            cnxt  = ssl.create_default_context()
+            sock  = socket.create_connection((self.address, self.port))
+            upstr = cnxt.wrap_socket(sock, server_hostname=self.tls_name)
+        else:
+            sock_type = socket.SOCK_STREAM if self.tcp else socket.SOCK_DGRAM
+            upstr = socket.socket(socket.AF_INET, sock_type)
+            upstr.connect((self.address, self.port))
+        self.conn = upstr
+
 def gen_packet(header, query):
     return header + query
 
@@ -451,7 +472,7 @@ def parse_packet(packet, sock_type):
     return ret
 
 ######UPSTREAM SETTINGS######
-upstreams = [
+upstrm_cnfgs = [
                 {
                  "address":'8.8.8.8',
                  "tls_name":"dns.google",
@@ -460,24 +481,18 @@ upstreams = [
                 }
             ]
 #############################
-def upstream_connect(upstream):
-    if len(upstream['tls_name']):
-        context = ssl.create_default_context()
-        up_sock_type = socket.SOCK_STREAM
-        sock  = socket.create_connection((upstream['address'], upstream['port']))
-        upstr = context.wrap_socket(sock, server_hostname=upstream['tls_name'])
-    else:
-        up_sock_type = socket.SOCK_STREAM if upstream["tcp"] else socket.SOCK_DGRAM
-        upstr = socket.socket(socket.AF_INET, up_sock_type)
-        upstr.connect((upstream["address"], upstream["port"]))
-    return upstr
 
 def main():
     MIN_PYTHON = (3, 5)
     if sys.version_info < MIN_PYTHON:
       sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 
-    #TODO: parse upsteams
+    #Parse upstreams
+    upstreams = []
+    for cnfg in upstrm_cnfgs:
+        new_upstr = upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
+        upstreams.append(new_upstr)
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind(('', 53))
     print("Server listening\n")
@@ -532,18 +547,19 @@ def main():
             s.sendto(packet, cladd)
             continue
         packet = gen_packet(header, query)
-        upstr = upstream_connect(upstreams[0])
-        if str(upstr.type) == "SocketKind.SOCK_STREAM": #Fix the ugliness
+        up = upstreams[0]
+        up.connect()
+        if up.tcp:
             packet_len = len(packet).to_bytes(2, byteorder='big')
             packet = packet_len + packet
-        upstr.sendall(packet)
+        up.conn.sendall(packet)
         if debug: print(str(query_num) + ": Sent upstream query\n")
 
         #Receive and parse upstream response
-        packet = upstr.recv(4096)
-        upstr.close()
+        packet = up.conn.recv(4096)
+        up.conn.close()
         if debug: print(str(query_num) + ": Received upstream response")
-        parsed = parse_packet(packet, upstreams[0]["tcp"])
+        parsed = parse_packet(packet, up.tcp)
         if 'ERROR' in parsed:
             print('ERROR: '+parsed['ERROR'])
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
