@@ -424,7 +424,7 @@ def parse_packet(packet, sock_type):
         if QDCount > 1:
             print("QDCount > 1 not supported. Disregarding additional queries")
             ret['QDCount'] = 1
-            QDcount = 1
+            QDCount = 1
         qdata = parse_question(pos, packet)
         if 'ERROR' in qdata:
             ret['ERROR'] = qdata['ERROR']
