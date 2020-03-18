@@ -1,3 +1,5 @@
+listen:
+  - "127.0.0.1"
 upstreams:
   - address: "8.8.8.8"
     tls_name: "dns.google"

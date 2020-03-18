@@ -378,7 +378,6 @@ def gen_RRs(data):
 def parse_packet(packet, sock_type):
     ret = {}
     pkt_len = len(packet) #Length of the packet received
-    print("pkt_len:" + str(pkt_len))
     if sock_type: #if tcp
         enc_len = int.from_bytes(packet[:2], 'big') #Encoded packet length
         pkt_len = pkt_len - 2
@@ -501,6 +500,9 @@ def main():
     global upstrm_cnfgs
     if "upstreams" in config and len(config["upstreams"]) > 0:
         upstrm_cnfgs = config["upstreams"]
+    listen_add = ""
+    if "listen" in config and len(config["listen"]) > 0:
+        listen_add = config["listen"][0] #TODO: support for multiple listen addresses
 
     #Parse upstreams
     upstreams = []
@@ -510,7 +512,7 @@ def main():
         upstreams.append(new_upstr)
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind(('', 53))
+    s.bind((listen_add, 53))
     print("Server listening\n")
     query_num = 0
     while True:
