@@ -539,10 +539,7 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pa
 
 def process_query(request, s):
     stype = s.type == socket.SocketKind.SOCK_STREAM
-    query_num = 0
-    query_num += 1
-    print(query_num)
-    if debug: print(str(query_num) + ": Received client query")
+    if debug: print("Received client query")
     parsed = parse_packet(request, stype)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
@@ -570,10 +567,10 @@ def process_query(request, s):
     qname   = parsed['Question'][0]['QNAME']
     qtype   = parsed['Question'][0]['QTYPE']
     qclass  = parsed['Question'][0]['QCLASS']
-    if debug: print(str(query_num) + ": Client query parsed\n")
+    if debug: print("Client query parsed\n")
 
     #Build and send query upstream
-    if debug: print(str(query_num) + " Generating upstream query")
+    if debug: print("Generating upstream query")
     header  = gen_header_std_query()
     query   = gen_question(qname, qtype, qclass)
     if query is None:
@@ -587,12 +584,12 @@ def process_query(request, s):
         packet_len = len(packet).to_bytes(2, byteorder='big')
         packet = packet_len + packet
     up.conn.sendall(packet)
-    if debug: print(str(query_num) + ": Sent upstream query\n")
+    if debug: print("Sent upstream query\n")
 
     #Receive and parse upstream response
     packet = up.conn.recv(4096)
     up.conn.close()
-    if debug: print(str(query_num) + ": Received upstream response")
+    if debug: print("Received upstream response")
     parsed = parse_packet(packet, up.tcp)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
@@ -602,10 +599,10 @@ def process_query(request, s):
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
     ARCount = parsed['ARCount']
-    if debug: print(str(query_num) + ": Upstream response parsed\n")
+    if debug: print("Upstream response parsed\n")
 
     #Build and send client response
-    if debug: print(str(query_num) + ": Generating client response")
+    if debug: print("Generating client response")
     flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
     header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
     response = gen_RRs(parsed)
@@ -614,7 +611,7 @@ def process_query(request, s):
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, response)
-    if debug: print(str(query_num) + ": Sent client response\n\n")
+    if debug: print("Sent client response\n\n")
     return packet
 
 if __name__ == "__main__":
