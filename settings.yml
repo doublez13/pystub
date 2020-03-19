@@ -13,3 +13,7 @@ upstreams:
     tls_name: "dns.quad9.net"
     port: 853
     tcp: 1
+  - address: "1.0.0.1"
+    tls_name: ""
+    port: 53
+    tcp: 1
