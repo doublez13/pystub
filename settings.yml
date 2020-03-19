@@ -9,3 +9,7 @@ upstreams:
     tls_name: "dns.google"
     port: 853
     tcp: 1
+  - address: "9.9.9.9"
+    tls_name: "dns.quad9.net"
+    port: 853
+    tcp: 1
