@@ -5,13 +5,15 @@
 #Status: Work in Progress
 
 import socket
+import socketserver
+import threading
 import random
 import sys
 import ssl
 import yaml
 
 config_file = './settings.yml'
-debug = 0
+debug = 1
 
 qtypes = {'A'    :  1,
           'NS'   :  2,
@@ -484,7 +486,7 @@ upstrm_cnfgs = [
                 }
                ]
 #############################
-
+upstreams = []
 def main():
     MIN_PYTHON = (3, 5)
     if sys.version_info < MIN_PYTHON:
@@ -505,105 +507,124 @@ def main():
         listen_add = config["listen"][0] #TODO: support for multiple listen addresses
 
     #Parse upstreams
-    upstreams = []
     for cnfg in upstrm_cnfgs:
         new_upstr = upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
         new_upstr.connect() #TODO: implement better verification
         upstreams.append(new_upstr)
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind((listen_add, 53))
-    print("Server listening\n")
+    tcp_server = ThreadedTCPServer((listen_add, 53), ThreadedTCPRequestHandler)
+    tcp_server_thread = threading.Thread(target=tcp_server.serve_forever)
+    tcp_server_thread.start()
+    udp_server = ThreadedUDPServer((listen_add, 53), ThreadedUDPRequestHandler)
+    udp_server_thread = threading.Thread(target=udp_server.serve_forever)
+    udp_server_thread.start()
+
+class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        print(type(self.request))
+        request = self.request.recv(4096)
+        process_query(request, self.request, None)
+class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        request = self.request[0]
+        process_query(request, self.request[1], self.client_address)
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pass
+class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pass
+
+def process_query(request, s, client_addr):
+    stype = s.type == socket.SocketKind.SOCK_STREAM
     query_num = 0
-    while True:
-        query_num += 1
-        #Receive and parse client query
-        request, cladd = s.recvfrom(4096)
-        print(query_num)
-        if debug: print(str(query_num) + ": Received client query")
-        parsed = parse_packet(request, 0)
-        if 'ERROR' in parsed:
-            print('ERROR: '+parsed['ERROR'])
-            if 'TXID' not in parsed:
-                continue #Drop packet since we can't even reply
-            cltxid = parsed['TXID']
-            if parsed['ERROR'] == "Unsupported qtype":
-                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
-            elif parsed['ERROR'] == "Unsupported qclass":
-                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
-            elif parsed['ERROR'] == "Malformed packet":
-                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-            elif parsed['ERROR'] == "Error parsing qname":
-                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-            elif parsed['ERROR'] == "RCode not implemented":
-                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
-            else: #Send back server failure if we don't have a better code
-                flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-            s.sendto(packet, cladd)
-            continue
+    query_num += 1
+    print(query_num)
+    if debug: print(str(query_num) + ": Received client query")
+    parsed = parse_packet(request, stype)
+    if 'ERROR' in parsed:
+        print('ERROR: '+parsed['ERROR'])
+        if 'TXID' not in parsed:
+            return #Drop packet since we can't even reply
         cltxid = parsed['TXID']
-        if len(parsed['Question']) == 0:
-            print("Empty query")
+        if parsed['ERROR'] == "Unsupported qtype":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+        elif parsed['ERROR'] == "Unsupported qclass":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+        elif parsed['ERROR'] == "Malformed packet":
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-            s.sendto(packet, cladd)
-            continue
-        qname   = parsed['Question'][0]['QNAME']
-        qtype   = parsed['Question'][0]['QTYPE']
-        qclass  = parsed['Question'][0]['QCLASS']
-        if debug: print(str(query_num) + ": Client query parsed\n")
-
-        #Build and send query upstream
-        if debug: print(str(query_num) + " Generating upstream query")
-        header  = gen_header_std_query()
-        query   = gen_question(qname, qtype, qclass)
-        if query is None:
-            print("Error generating query.")
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-            s.sendto(packet, cladd)
-            continue
-        packet = gen_packet(header, query)
-        up = random.choice(upstreams)
-        up.connect()
-        if up.tcp:
-            packet_len = len(packet).to_bytes(2, byteorder='big')
-            packet = packet_len + packet
-        up.conn.sendall(packet)
-        if debug: print(str(query_num) + ": Sent upstream query\n")
-
-        #Receive and parse upstream response
-        packet = up.conn.recv(4096)
-        up.conn.close()
-        if debug: print(str(query_num) + ": Received upstream response")
-        parsed = parse_packet(packet, up.tcp)
-        if 'ERROR' in parsed:
-            print('ERROR: '+parsed['ERROR'])
+        elif parsed['ERROR'] == "Error parsing qname":
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-            s.sendto(packet, cladd)
-            continue
-        QDCount = parsed['QDCount']
-        ANCount = parsed['ANCount']
-        NSCount = parsed['NSCount']
-        ARCount = parsed['ARCount']
-        if debug: print(str(query_num) + ": Upstream response parsed\n")
-
-        #Build and send client response
-        if debug: print(str(query_num) + ": Generating client response")
-        flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
-        header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
-        response = gen_RRs(parsed)
-        if response is None:
-            print("Error generating client response.")
+        elif parsed['ERROR'] == "RCode not implemented":
+            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+        else: #Send back server failure if we don't have a better code
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-            packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-            s.sendto(packet, cladd)
-            continue
-        packet = gen_packet(header, response)
-        s.sendto(packet, cladd)
-        if debug: print(str(query_num) + ": Sent client response\n\n")
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendall(packet)
+        return
+    cltxid = parsed['TXID']
+    if len(parsed['Question']) == 0:
+        print("Empty query")
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendall(packet)
+        return
+    qname   = parsed['Question'][0]['QNAME']
+    qtype   = parsed['Question'][0]['QTYPE']
+    qclass  = parsed['Question'][0]['QCLASS']
+    if debug: print(str(query_num) + ": Client query parsed\n")
+
+    #Build and send query upstream
+    if debug: print(str(query_num) + " Generating upstream query")
+    header  = gen_header_std_query()
+    query   = gen_question(qname, qtype, qclass)
+    if query is None:
+        print("Error generating query.")
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendall(packet)
+        return
+    packet = gen_packet(header, query)
+    up = random.choice(upstreams)
+    up.connect()
+    if up.tcp:
+        packet_len = len(packet).to_bytes(2, byteorder='big')
+        packet = packet_len + packet
+    up.conn.sendall(packet)
+    if debug: print(str(query_num) + ": Sent upstream query\n")
+
+    #Receive and parse upstream response
+    packet = up.conn.recv(4096)
+    up.conn.close()
+    if debug: print(str(query_num) + ": Received upstream response")
+    parsed = parse_packet(packet, up.tcp)
+    if 'ERROR' in parsed:
+        print('ERROR: '+parsed['ERROR'])
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendall(packet)
+        return
+    QDCount = parsed['QDCount']
+    ANCount = parsed['ANCount']
+    NSCount = parsed['NSCount']
+    ARCount = parsed['ARCount']
+    if debug: print(str(query_num) + ": Upstream response parsed\n")
+
+    #Build and send client response
+    if debug: print(str(query_num) + ": Generating client response")
+    flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
+    header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
+    response = gen_RRs(parsed)
+    if response is None:
+        print("Error generating client response.")
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
+        s.sendall(packet)
+        return
+    packet = gen_packet(header, response)
+    if stype: #tcp
+        packet_len = len(packet).to_bytes(2, byteorder='big')
+        packet = packet_len + packet
+        s.sendall(packet)
+    else: #udp
+        s.sendto(packet, client_addr)
+    if debug: print(str(query_num) + ": Sent client response\n\n")
 
 if __name__ == "__main__":
     main()
