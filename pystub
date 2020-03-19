@@ -13,7 +13,7 @@ import ssl
 import yaml
 
 config_file = './settings.yml'
-debug = 1
+debug = 0
 
 qtypes = {'A'    :  1,
           'NS'   :  2,
@@ -521,17 +521,23 @@ def main():
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
-        print(type(self.request))
         request = self.request.recv(4096)
-        process_query(request, self.request, None)
+        packet = process_query(request, self.request)
+        if packet == None:
+            self.request.close()
+            return #No response to send back to client
+        packet_len = len(packet).to_bytes(2, byteorder='big')
+        packet = packet_len + packet
+        self.request.sendall(packet)
 class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         request = self.request[0]
-        process_query(request, self.request[1], self.client_address)
+        packet = process_query(request, self.request[1])
+        self.request[1].sendto(packet, self.client_address)
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pass
 class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pass
 
-def process_query(request, s, client_addr):
+def process_query(request, s):
     stype = s.type == socket.SocketKind.SOCK_STREAM
     query_num = 0
     query_num += 1
@@ -541,7 +547,7 @@ def process_query(request, s, client_addr):
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
         if 'TXID' not in parsed:
-            return #Drop packet since we can't even reply
+            return None #Drop packet since we can't even reply
         cltxid = parsed['TXID']
         if parsed['ERROR'] == "Unsupported qtype":
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
@@ -555,16 +561,12 @@ def process_query(request, s, client_addr):
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
         else: #Send back server failure if we don't have a better code
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendall(packet)
-        return
+        return gen_header(cltxid, flags, 0, 0, 0, 0)
     cltxid = parsed['TXID']
     if len(parsed['Question']) == 0:
         print("Empty query")
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendall(packet)
-        return
+        return gen_header(cltxid, flags, 0, 0, 0, 0)
     qname   = parsed['Question'][0]['QNAME']
     qtype   = parsed['Question'][0]['QTYPE']
     qclass  = parsed['Question'][0]['QCLASS']
@@ -577,9 +579,7 @@ def process_query(request, s, client_addr):
     if query is None:
         print("Error generating query.")
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendall(packet)
-        return
+        return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, query)
     up = random.choice(upstreams)
     up.connect()
@@ -597,9 +597,7 @@ def process_query(request, s, client_addr):
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendall(packet)
-        return
+        return gen_header(cltxid, flags, 0, 0, 0, 0)
     QDCount = parsed['QDCount']
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
@@ -614,17 +612,10 @@ def process_query(request, s, client_addr):
     if response is None:
         print("Error generating client response.")
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
-        packet = gen_header(cltxid, flags, 0, 0, 0, 0)
-        s.sendall(packet)
-        return
+        return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, response)
-    if stype: #tcp
-        packet_len = len(packet).to_bytes(2, byteorder='big')
-        packet = packet_len + packet
-        s.sendall(packet)
-    else: #udp
-        s.sendto(packet, client_addr)
     if debug: print(str(query_num) + ": Sent client response\n\n")
+    return packet
 
 if __name__ == "__main__":
     main()
