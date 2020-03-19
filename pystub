@@ -425,7 +425,6 @@ def parse_packet(packet, sock_type):
         if QDCount > 1:
             print("QDCount > 1 not supported. Disregarding additional queries")
             ret['QDCount'] = 1
-            QDCount = 1
         qdata = parse_question(pos, packet)
         if 'ERROR' in qdata:
             ret['ERROR'] = qdata['ERROR']
@@ -523,7 +522,7 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         request = self.request.recv(4096)
         packet = process_query(request, self.request)
-        if packet == None:
+        if packet is None:
             self.request.close()
             return #No response to send back to client
         packet_len = len(packet).to_bytes(2, byteorder='big')
@@ -588,6 +587,8 @@ def process_query(request, s):
 
     #Receive and parse upstream response
     packet = up.conn.recv(4096)
+    while len(packet) == 2: #Probably not correct
+      packet += up.conn.recv(4096)
     up.conn.close()
     if debug: print("Received upstream response")
     parsed = parse_packet(packet, up.tcp)
@@ -595,7 +596,6 @@ def process_query(request, s):
         print('ERROR: '+parsed['ERROR'])
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
-    QDCount = parsed['QDCount']
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
     ARCount = parsed['ARCount']
