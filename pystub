@@ -79,7 +79,7 @@ class upstream:
         if self.tcp:
             try:
                 packet = conn.recv(4096)
-            except:
+            except Exception:
                 return ""
             enc_len = int.from_bytes(packet[:2], 'big')
             pkt_len = len(packet) - 2
@@ -87,14 +87,14 @@ class upstream:
             while pkt_len != enc_len:
                 try:
                     packet += conn.recv(4096)
-                except:
+                except Exception:
                     return ""
                 pkt_len += len(packet)
             return packet
         else:
             try:
                 return conn.recv(512)
-            except:
+            except Exception:
                 return ""
 
 def gen_packet(header, query):
@@ -424,7 +424,7 @@ def parse_packet(packet):
     pkt_len = len(packet) #Length of the packet received
     
     #parse header
-    if len(packet) < 12:
+    if pkt_len < 12:
         print("Packet length too short.")
         ret['ERROR'] = "Packet length too short"
         return ret
@@ -477,13 +477,13 @@ def parse_packet(packet):
             count = ARCount
         if count and debug: print("Response contains " + section + " section. Parsing...")
         ret[section] = []
-        if len(packet) < pos + count*10: #sanity check so we don't loop a crazy number of times on a malformed packet
+        if pkt_len < pos + count*10: #sanity check so we don't loop a crazy number of times on a malformed packet
             ret['ERROR'] = "Malformed packet" #TODO: revisit this when we wire up truncation
             return ret
         for i in range(count):
             qname = parse_name(pos, packet)
             pos   = skip_name(pos, packet)
-            if len(packet) < pos+10:
+            if pkt_len < pos+10:
                 ret['ERROR'] = "Malformed packet"
                 return ret
             qtype    = int.from_bytes(packet[pos:pos+2], 'big')
@@ -491,7 +491,7 @@ def parse_packet(packet):
             ttl      = int.from_bytes(packet[pos+4:pos+8], 'big')
             RDlength = int.from_bytes(packet[pos+8:pos+10], 'big')
             pos += 10
-            if len(packet) < pos + RDlength:
+            if pkt_len < pos + RDlength:
                 ret['ERROR'] = "Malformed packet"
                 return ret
             RData = parse_rdata(qtype, pos, packet)
@@ -555,17 +555,21 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
         request = self.request.recv(4096)
         packet = process_query(request)
         if packet is None:
-            self.request.close()
             return #No response to send back to client
         packet_len = len(packet).to_bytes(2, byteorder='big')
         packet = packet_len + packet
         self.request.sendall(packet)
+
 class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         request = self.request[0]
         packet = process_query(request)
+        if packet is None:
+            return #No response to send back to client
         self.request[1].sendto(packet, self.client_address)
+
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pass
+
 class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pass
 
 def process_query(request):
