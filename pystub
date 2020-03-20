@@ -68,16 +68,25 @@ class upstream:
 
     def recvall(self):
         if self.tcp:
-            packet = self.conn.recv(4096)
+            try:
+                packet = self.conn.recv(4096)
+            except:
+                return ""
             enc_len = int.from_bytes(packet[:2], 'big')
             pkt_len = len(packet) - 2
             packet = packet[2:]
             while pkt_len != enc_len:
-                packet += self.conn.recv(4096)
+                try:
+                    packet += self.conn.recv(4096)
+                except:
+                    return ""
                 pkt_len += len(packet)
             return packet
         else:
-            return self.conn.recv(512)
+            try:
+                return self.conn.recv(512)
+            except:
+                return ""
 
 def gen_packet(header, query):
     return header + query
