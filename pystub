@@ -55,6 +55,22 @@ class upstream:
             upstr.connect((self.address, self.port))
         self.conn = upstr
 
+    def sendall(self, packet):
+        return self.conn.sendall(packet)
+
+    def recvall(self):
+        if self.tcp:
+            packet = self.conn.recv(4096)
+            enc_len = int.from_bytes(packet[:2], 'big')
+            pkt_len = len(packet) - 2
+            packet = packet[2:]
+            while pkt_len != enc_len:
+                packet += self.conn.recv(4096)
+                pkt_len += len(packet)
+            return packet
+        else:
+            return self.conn.recv(512)
+
 def gen_packet(header, query):
     return header + query
 
@@ -377,17 +393,9 @@ def gen_RRs(data):
                 response += tmp_res
     return response
 
-def parse_packet(packet, sock_type):
+def parse_packet(packet):
     ret = {}
     pkt_len = len(packet) #Length of the packet received
-    if sock_type: #if tcp
-        enc_len = int.from_bytes(packet[:2], 'big') #Encoded packet length
-        pkt_len = pkt_len - 2
-        packet = packet[2:]
-        if pkt_len != enc_len:
-            print("Packet length mismatch.")
-            ret['ERROR'] = "Packet length mismatch."
-            return ret
     
     #parse header
     if len(packet) < 12:
@@ -521,7 +529,7 @@ def main():
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         request = self.request.recv(4096)
-        packet = process_query(request, self.request)
+        packet = process_query(request)
         if packet is None:
             self.request.close()
             return #No response to send back to client
@@ -531,15 +539,14 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
 class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         request = self.request[0]
-        packet = process_query(request, self.request[1])
+        packet = process_query(request)
         self.request[1].sendto(packet, self.client_address)
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pass
 class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pass
 
-def process_query(request, s):
-    stype = s.type == socket.SocketKind.SOCK_STREAM
+def process_query(request):
     if debug: print("Received client query")
-    parsed = parse_packet(request, stype)
+    parsed = parse_packet(request)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
         if 'TXID' not in parsed:
@@ -582,16 +589,14 @@ def process_query(request, s):
     if up.tcp:
         packet_len = len(packet).to_bytes(2, byteorder='big')
         packet = packet_len + packet
-    up.conn.sendall(packet)
+    up.sendall(packet)
     if debug: print("Sent upstream query\n")
 
     #Receive and parse upstream response
-    packet = up.conn.recv(4096)
-    while len(packet) == 2: #Probably not correct
-      packet += up.conn.recv(4096)
+    packet = up.recvall()
     up.conn.close()
     if debug: print("Received upstream response")
-    parsed = parse_packet(packet, up.tcp)
+    parsed = parse_packet(packet)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
