@@ -51,6 +51,7 @@ class upstream:
 
     #Static method that returns an upstream.
     #We can tweak this method later on for priority.
+    @staticmethod
     def get_server():
         return random.choice(upstream.upstreams)
 
