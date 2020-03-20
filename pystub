@@ -59,6 +59,7 @@ class upstream:
         self.conn = upstr
 
     def close(self):
+        self.conn.shutdown(socket.SHUT_WR)
         self.conn.close()
         self.conn = None
 
