@@ -72,6 +72,9 @@ class upstream:
         self.conn = None
 
     def sendall(self, packet):
+        if self.tcp:
+            packet_len = len(packet).to_bytes(2, byteorder='big')
+            packet = packet_len + packet
         return self.conn.sendall(packet)
 
     def recvall(self):
@@ -609,9 +612,6 @@ def process_query(request):
     packet = gen_packet(header, query)
     up = upstream.get_server()
     up.connect()
-    if up.tcp:
-        packet_len = len(packet).to_bytes(2, byteorder='big')
-        packet = packet_len + packet
     up.sendall(packet)
     if debug: print("Sent upstream query\n")
 
