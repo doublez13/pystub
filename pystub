@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-#Python implementation of RFC 1035 just for fun
-#https://tools.ietf.org/html/rfc1035
+#DNS stub server with support for DNS over TLS.
+#
+#RFC 1035: DOMAIN NAMES - IMPLEMENTATION AND SPECIFICATION
+#RFC 7766: DNS Transport over TCP - Implementation Requirements
+#RFC 7858: Specification for DNS over Transport Layer Security (TLS)
 #
 #Status: Work in Progress
 
