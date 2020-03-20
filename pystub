@@ -38,6 +38,8 @@ rcodes= {0: "No Error",
          5: "Query Refused"}
 
 class upstream:
+    upstreams = []
+
     def __init__(self, addr, tls_name, port, tcp):
         #TODO: verify valid input
         self.address  = addr
@@ -46,6 +48,12 @@ class upstream:
         self.tcp      = 1 if len(tls_name) > 0 else tcp
         self.tls      = 1 if len(tls_name) > 0 else 0
         self.conn     = None
+        upstream.upstreams.append(self)
+
+    #Static method that returns an upstream.
+    #We can tweak this method later on for priority.
+    def get_server():
+        return random.choice(upstream.upstreams)
 
     def connect(self):
         if self.tls:
@@ -510,7 +518,6 @@ upstrm_cnfgs = [
                 }
                ]
 #############################
-upstreams = []
 def main():
     MIN_PYTHON = (3, 5)
     if sys.version_info < MIN_PYTHON:
@@ -534,7 +541,6 @@ def main():
     for cnfg in upstrm_cnfgs:
         new_upstr = upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
         new_upstr.connect() #TODO: implement better verification
-        upstreams.append(new_upstr)
 
     tcp_server = ThreadedTCPServer((listen_add, 53), ThreadedTCPRequestHandler)
     tcp_server_thread = threading.Thread(target=tcp_server.serve_forever)
@@ -601,7 +607,7 @@ def process_query(request):
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, query)
-    up = random.choice(upstreams)
+    up = upstream.get_server()
     up.connect()
     if up.tcp:
         packet_len = len(packet).to_bytes(2, byteorder='big')
