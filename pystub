@@ -55,6 +55,10 @@ class upstream:
             upstr.connect((self.address, self.port))
         self.conn = upstr
 
+    def close(self):
+        self.conn.close()
+        self.conn = None
+
     def sendall(self, packet):
         return self.conn.sendall(packet)
 
@@ -594,7 +598,7 @@ def process_query(request):
 
     #Receive and parse upstream response
     packet = up.recvall()
-    up.conn.close()
+    up.close()
     if debug: print("Received upstream response")
     parsed = parse_packet(packet)
     if 'ERROR' in parsed:
