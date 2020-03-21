@@ -31,10 +31,10 @@ Support for the following record types has been implemented with more to come so
 
 # TODO:
 - RFC 1035 compliance
-- Improve crash prevention in main
-- Add support for more record types
-- Multithread the sockets
+- Share upstream TCP sockets
 - Run as daemon
+- Implement optional caching
+- Implement importing ad blocking lists
 
 # Testing
 Shoutout to guyinatuxedo for their awesome DNS fuzzer: https://github.com/guyinatuxedo/dns-fuzzer
