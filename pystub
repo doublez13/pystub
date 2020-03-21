@@ -437,9 +437,10 @@ def parse_packet(packet):
     NSCount  = int.from_bytes(header[8:10], 'big')  #Number of NS RRs
     ARCount  = int.from_bytes(header[10:12], 'big') #Number of add RRS
 
-    flags = parse_flags(flags)
-
     ret['TXID'] = trans_id
+
+    flags = parse_flags(flags)
+    ret['FLAG'] = flags
 
     RCode = flags["RCode"]
     if RCode not in rcodes:
@@ -599,15 +600,17 @@ def process_query(request):
         print("Empty query")
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
-    qname   = parsed['Question'][0]['QNAME']
-    qtype   = parsed['Question'][0]['QTYPE']
-    qclass  = parsed['Question'][0]['QCLASS']
+    qname  = parsed['Question'][0]['QNAME']
+    qtype  = parsed['Question'][0]['QTYPE']
+    qclass = parsed['Question'][0]['QCLASS']
+    RD     = parsed['FLAG']['RD']
     if debug: print("Client query parsed\n")
 
     #Build and send query upstream
     if debug: print("Generating upstream query")
-    header  = gen_header_std_query()
-    query   = gen_question(qname, qtype, qclass)
+    flags  = gen_flags(0, 0, 0, 0, RD, 0, 0, 0)
+    header = gen_header(gen_trans_id(), flags, 1, 0, 0, 0)
+    query  = gen_question(qname, qtype, qclass)
     if query is None:
         print("Error generating query.")
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
