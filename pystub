@@ -8,7 +8,6 @@
 #Status: Work in Progress
 
 import socket
-from socket import timeout
 import socketserver
 import threading
 import random
