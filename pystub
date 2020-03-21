@@ -174,11 +174,13 @@ def gen_name(qname):
     dns_name += str.encode(chr(0))
     return dns_name
 
-def parse_name(start, packet, depth=0):
-    depth += 1
-    if depth == 5:
-        print("Aborting name parsing due to depth limit")
-        return None #TODO: figure out if the RFC allows embedded compression
+def parse_name(start, packet, pointers=None):
+    if pointers is None:
+        pointers = []
+    if start in pointers:
+        print("Circular name reference detected. Aborting name parsing...")
+        return None
+    pointers.append(start)
     name_str = ''
     i = start
     while i < len(packet): 
@@ -186,7 +188,7 @@ def parse_name(start, packet, depth=0):
             if(packet[i] >= 0xc0):
                 if debug: print("Compressed name received. Following reference")
                 offset = int.from_bytes(packet[i:i+2], 'big') & 2**14-1
-                parsed = parse_name(offset, packet, depth)
+                parsed = parse_name(offset, packet, pointers)
                 if parsed is None:
                     return parsed
                 name_str += parsed
