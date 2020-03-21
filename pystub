@@ -8,6 +8,7 @@
 #Status: Work in Progress
 
 import socket
+from socket import timeout
 import socketserver
 import threading
 import random
@@ -56,14 +57,24 @@ class upstream:
         return random.choice(upstream.upstreams)
 
     def connect(self):
+        timeout = 2 #Seconds
         if self.tls:
             cnxt  = ssl.create_default_context()
-            sock  = socket.create_connection((self.address, self.port))
+            try:
+                sock  = socket.create_connection((self.address, self.port), timeout)
+            except Exception:
+                print("Unable to connect to "+self.tls_name)
+                return None
             upstr = cnxt.wrap_socket(sock, server_hostname=self.tls_name)
         else:
             sock_type = socket.SOCK_STREAM if self.tcp else socket.SOCK_DGRAM
             upstr = socket.socket(socket.AF_INET, sock_type)
-            upstr.connect((self.address, self.port))
+            upstr.settimeout(timeout)
+            try:
+                upstr.connect((self.address, self.port))
+            except Exception:
+                print("Unable to connect to "+self.address)
+                return None
         return upstr
 
     def close(self, conn):
@@ -618,8 +629,17 @@ def process_query(request):
         flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, query)
-    up = upstream.get_server()
-    conn = up.connect()
+    #TODO: Consider making this block a static fuction of upstream
+    conn = None
+    attempts = 0
+    while conn is None and attempts < 10: #TODO: parallel?
+        up = upstream.get_server()
+        conn = up.connect()
+        attempts += 1
+    if conn is None:
+        print("Error connecting upstream.")
+        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        return gen_header(cltxid, flags, 0, 0, 0, 0)
     up.sendall(conn, packet)
     if debug: print("Sent upstream query\n")
 
