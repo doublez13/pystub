@@ -635,17 +635,17 @@ def process_query(request):
             flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     cltxid = parsed['TXID']
+    RD     = parsed['FLAG']['RD']
     if len(parsed['Question']) == 0:
         print("Empty query")
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 1)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     qname  = parsed['Question'][0]['QNAME']
     qtype  = parsed['Question'][0]['QTYPE']
     qclass = parsed['Question'][0]['QCLASS']
-    RD     = parsed['FLAG']['RD']
     if any(domain in qname for domain in blacklist) and qtype in ['A', 'AAAA']:
         print("Blocked: " + qname)
-        flags  = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
+        flags  = gen_flags(1, 0, 0, 0, RD, 1, 0, 0)
         header = gen_header(cltxid, flags, 1, 1, 0, 0)
         parsed['ANCount'] = 1
         loopback = '127.0.0.1' if qtype == 'A' else '0000:0000:0000:0000:0000:0000:0000:0001'
@@ -663,7 +663,7 @@ def process_query(request):
     query  = gen_question(qname, qtype, qclass)
     if query is None:
         print("Error generating query.")
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, query)
     #TODO: Consider making this block a static fuction of upstream
@@ -675,7 +675,7 @@ def process_query(request):
         attempts += 1
     if conn is None:
         print("Error connecting upstream.")
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     up.sendall(conn, packet)
     if debug: print("Sent upstream query\n")
@@ -687,7 +687,7 @@ def process_query(request):
     parsed = parse_packet(packet)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 1)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
@@ -696,12 +696,12 @@ def process_query(request):
 
     #Build and send client response
     if debug: print("Generating client response")
-    flags    = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
+    flags    = gen_flags(1, 0, 0, 0, RD, 1, 0, 0)
     header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
     response = gen_RRs(parsed)
     if response is None:
         print("Error generating client response.")
-        flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, response)
     if debug: print("Sent client response\n\n")
