@@ -14,6 +14,7 @@ import random
 import sys
 import ssl
 import yaml
+import json
 import urllib.request
 
 config_file = './settings.yml'
@@ -312,7 +313,7 @@ def parse_rdata(qtype, start, data):
         if debug: print("Parsing AAAA record")
         AAAA = ''
         for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
-        rdata['AAAA_ADDRESS'] = AAAA[:-1]
+        rdata['ADDRESS'] = AAAA[:-1]
     elif qtype == qtypes['SRV']: #RFC 2782
         if debug: print("Parsing SRV record")
         rdata['PRIORITY'] = int.from_bytes(data[start:start+2], 'big')
@@ -384,7 +385,7 @@ def gen_rdata(data):
         if debug: print("Building AAAA record")
         size   = 16
         rdata += size.to_bytes(2, byteorder='big')
-        aaaa   = data['AAAA_ADDRESS']
+        aaaa   = data['ADDRESS']
         for group in aaaa.split(':'): rdata += bytes.fromhex(group)
     elif qtype == 'SRV':
         if debug: print("Building SRV record")
@@ -632,10 +633,15 @@ def process_query(request):
     qtype  = parsed['Question'][0]['QTYPE']
     qclass = parsed['Question'][0]['QCLASS']
     RD     = parsed['FLAG']['RD']
-    if qname in blacklist and qtype in ['A', 'AAAA']:
+    if any(domain in qname for domain in blacklist) and qtype in ['A', 'AAAA']:
         print("Blocked: " + qname)
-        flags  = gen_flags(1, 0, 0, 0, 1, 1, 0, 3)
-        packet = gen_header(cltxid, flags, 1, 0, 0, 0)
+        flags  = gen_flags(1, 0, 0, 0, 1, 1, 0, 0)
+        header = gen_header(cltxid, flags, 1, 1, 0, 0)
+        parsed['ANCount'] = 1
+        loopback = '127.0.0.1' if qtype == 'A' else '0000:0000:0000:0000:0000:0000:0000:0001'
+        parsed['Answer'] = [{'ADDRESS': loopback, 'QNAME': qname, 'QTYPE': qtype, 'QCLASS': qclass, 'TTL': 3600}]
+        response = gen_RRs(parsed)
+        packet = gen_packet(header, response)
         if debug: print("Blocked domain\n\n")
         return packet
     if debug: print("Client query parsed\n")
