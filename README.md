@@ -34,7 +34,7 @@ Support for the following record types has been implemented with more to come so
 - Share upstream TCP sockets
 - Run as daemon
 - Implement optional caching
-- Implement importing ad blocking lists
 
-# Testing
+# Thanks
+Thanks to Peter Lowe for maintaining a fantastic blocklist for ad servers: https://pgl.yoyo.org/as/  
 Shoutout to guyinatuxedo for their awesome DNS fuzzer: https://github.com/guyinatuxedo/dns-fuzzer
