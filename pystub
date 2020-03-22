@@ -14,7 +14,7 @@ import random
 import sys
 import ssl
 import yaml
-import json
+import re
 import urllib.request
 
 config_file = './settings.yml'
@@ -560,14 +560,23 @@ def main():
     if "listen" in config and len(config["listen"]) > 0:
         listen_add = config["listen"][0] #TODO: support for multiple listen addresses
     if "blacklist" in config and len(config["blacklist"]) > 0:
+        domain_regex = "^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$"
         if "url" in config["blacklist"]:
             for url in config["blacklist"]["url"]:
-                page = urllib.request.urlopen(url)
+                try:
+                    page = urllib.request.urlopen(url)
+                except Exception:
+                    print("Unable to parse blocklist from " + url)
+                    continue
                 for line in page:
-                    blacklist.append(line.decode('utf-8').rstrip())
+                    domain = line.decode('utf-8').rstrip()
+                    if re.fullmatch(domain_regex, domain):
+                        blacklist.append(domain)
         if "domain" in config["blacklist"]:
             for domain in config["blacklist"]["domain"]:
-                blacklist.append(domain)
+                if re.fullmatch(domain_regex, domain):
+                    blacklist.append(domain)
+        print("Imported " + str(len(blacklist)) + " blacklist domains")
 
     #Parse upstreams
     for cnfg in upstrm_cnfgs:
@@ -580,6 +589,7 @@ def main():
     udp_server = ThreadedUDPServer((listen_add, 53), ThreadedUDPRequestHandler)
     udp_server_thread = threading.Thread(target=udp_server.serve_forever)
     udp_server_thread.start()
+    print("Server listening on TCP and UDP port 53\n")
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
