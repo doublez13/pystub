@@ -16,9 +16,7 @@ import ssl
 import yaml
 import re
 import urllib.request
-
-config_file = './settings.yml'
-debug = 0
+import argparse
 
 qtypes = {'A'    :  1,
           'NS'   :  2,
@@ -538,7 +536,7 @@ def parse_packet(packet):
     return ret
 
 ######DEFAULT SETTINGS######
-#Server(s) used if none are specified in the settings file
+debug = 0
 upstrm_cnfgs = [
                 {
                  "address":'8.8.8.8',
@@ -550,19 +548,30 @@ upstrm_cnfgs = [
 blacklist = []
 #############################
 def main():
+    global debug
+    global upstrm_cnfgs
+    global blacklist
+
     MIN_PYTHON = (3, 5)
     if sys.version_info < MIN_PYTHON:
       sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 
+    parser = argparse.ArgumentParser(description='Pystub DNS stub resolver')
+    parser.add_argument('-C', dest='config_file', help='Configuration file location')
+    parser.add_argument('-v', dest='verbose', action='store_true', help='Verbose output')
+    args = parser.parse_args()
+    config_file = args.config_file
+    debug       = args.verbose
+
     #Parse config
-    with open(config_file, "r") as c:
-        try:
-            config = yaml.safe_load(c)
-        except yaml.YAMLERROR as exc:
-            print(exc)
-            sys.exit(1)
-    global upstrm_cnfgs
-    global blacklist
+    config = []
+    if config_file:
+        with open(config_file, "r") as c:
+            try:
+                config = yaml.safe_load(c)
+            except yaml.YAMLERROR as exc:
+                print(exc)
+                sys.exit(1)
     if "upstreams" in config and len(config["upstreams"]) > 0:
         upstrm_cnfgs = config["upstreams"]
     listen_add = ""
