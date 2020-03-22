@@ -26,4 +26,3 @@ blacklist:
     - "https://pgl.yoyo.org/as/serverlist.php?hostformat=nohtml&showintro=0"
   domain:
     - "doubleclick.net"
-    - "adclick.g.doubleclick.net"

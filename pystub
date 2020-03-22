@@ -589,7 +589,7 @@ def main():
     udp_server = ThreadedUDPServer((listen_add, 53), ThreadedUDPRequestHandler)
     udp_server_thread = threading.Thread(target=udp_server.serve_forever)
     udp_server_thread.start()
-    print("Server listening on TCP and UDP port 53\n")
+    print("Server listening on " + listen_add + " port 53\n")
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
