@@ -3,7 +3,8 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/doublez13/pystub.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doublez13/pystub/alerts/)
 
-Pystub is basic DNS stub server written in python with support for DNS over TLS.
+Pystub is a small DNS stub server written in python with support for DNS over TLS.  
+Pystub also allows importing domain blocklists. In the settings.py file, you can specify a list of domains to be blacklisted, or point to a url that contains a list of domains. This feature can be used to block ad servers or other invasive content.
 
 # Running
 Pystub needs permission to bind on port 53.
