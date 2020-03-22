@@ -56,7 +56,7 @@ class upstream:
     @staticmethod
     def get_server():
         if random.randrange(1000) == 999 or len(upstream.enabled) == 0:
-            upstreams.enabled = upstreams.upstreams.copy()
+            upstream.enabled = upstream.upstreams.copy()
         return random.choice(upstream.enabled)
 
     def connect(self):
