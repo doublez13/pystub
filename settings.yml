@@ -17,3 +17,9 @@ upstreams:
     tls_name: "cloudflare-dns.com"
     port: 853
     tcp: 1
+blacklist:
+  url:
+    - "https://pgl.yoyo.org/as/serverlist.php?hostformat=nohtml&showintro=0"
+  domain:
+    - "doubleclick.net"
+    - "adclick.g.doubleclick.net"

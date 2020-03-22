@@ -14,6 +14,7 @@ import random
 import sys
 import ssl
 import yaml
+import urllib.request
 
 config_file = './settings.yml'
 debug = 0
@@ -54,7 +55,7 @@ class upstream:
     @staticmethod
     def get_server():
         if random.randrange(1000) == 999 or len(upstream.enabled) == 0:
-            enabled = upstreams.copy()
+            upstreams.enabled = upstreams.upstreams.copy()
         return random.choice(upstream.enabled)
 
     def connect(self):
@@ -526,7 +527,7 @@ def parse_packet(packet):
             pos += RDlength
     return ret
 
-######UPSTREAM SETTINGS######
+######DEFAULT SETTINGS######
 #Server(s) used if none are specified in the settings file
 upstrm_cnfgs = [
                 {
@@ -536,6 +537,7 @@ upstrm_cnfgs = [
                  "tcp":1
                 }
                ]
+blacklist = []
 #############################
 def main():
     MIN_PYTHON = (3, 5)
@@ -550,11 +552,21 @@ def main():
             print(exc)
             sys.exit(1)
     global upstrm_cnfgs
+    global blacklist
     if "upstreams" in config and len(config["upstreams"]) > 0:
         upstrm_cnfgs = config["upstreams"]
     listen_add = ""
     if "listen" in config and len(config["listen"]) > 0:
         listen_add = config["listen"][0] #TODO: support for multiple listen addresses
+    if "blacklist" in config and len(config["blacklist"]) > 0:
+        if "url" in config["blacklist"]:
+            for url in config["blacklist"]["url"]:
+                page = urllib.request.urlopen(url)
+                for line in page:
+                    blacklist.append(line.decode('utf-8').rstrip())
+        if "domain" in config["blacklist"]:
+            for domain in config["blacklist"]["domain"]:
+                blacklist.append(domain)
 
     #Parse upstreams
     for cnfg in upstrm_cnfgs:
@@ -620,6 +632,12 @@ def process_query(request):
     qtype  = parsed['Question'][0]['QTYPE']
     qclass = parsed['Question'][0]['QCLASS']
     RD     = parsed['FLAG']['RD']
+    if qname in blacklist and qtype in ['A', 'AAAA']:
+        print("Blocked: " + qname)
+        flags  = gen_flags(1, 0, 0, 0, 1, 1, 0, 3)
+        packet = gen_header(cltxid, flags, 1, 0, 0, 0)
+        if debug: print("Blocked domain\n\n")
+        return packet
     if debug: print("Client query parsed\n")
 
     #Build and send query upstream
