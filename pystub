@@ -17,6 +17,7 @@ import yaml
 import re
 import urllib.request
 import argparse
+import os
 
 qtypes = {'A'    :  1,
           'NS'   :  2,
@@ -536,6 +537,7 @@ def parse_packet(packet):
     return ret
 
 ######DEFAULT SETTINGS######
+deflt_cnfg_file = '/etc/pystub.yml'
 debug = 0
 upstrm_cnfgs = [
                 {
@@ -564,12 +566,14 @@ def main():
     debug       = args.verbose
 
     #Parse config
+    if config_file is None:
+        config_file = deflt_cnfg_file if os.path.isfile(deflt_cnfg_file) else None
     config = []
     if config_file:
         with open(config_file, "r") as c:
             try:
                 config = yaml.safe_load(c)
-            except yaml.YAMLERROR as exc:
+            except yaml.YAMLError as exc:
                 print(exc)
                 sys.exit(1)
     if "upstreams" in config and len(config["upstreams"]) > 0:
