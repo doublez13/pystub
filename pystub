@@ -93,6 +93,7 @@ class upstream:
 
     def recvall(self, conn):
         if self.tcp:
+            conn.settimeout(6)
             try:
                 packet = conn.recv(4096)
             except Exception:
@@ -100,9 +101,9 @@ class upstream:
             enc_len = int.from_bytes(packet[:2], 'big')
             pkt_len = len(packet) - 2
             packet = packet[2:]
-            while pkt_len != enc_len:
+            while pkt_len < enc_len:
                 try:
-                    packet += conn.recv(4096)
+                    packet += conn.recv(enc_len - pkt_len)
                 except Exception:
                     return ""
                 pkt_len += len(packet)
@@ -608,6 +609,7 @@ def main():
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
+        self.request.settimeout(6)
         try:
             packet = self.request.recv(4096)
         except Exception:
@@ -615,9 +617,9 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
         enc_len = int.from_bytes(packet[:2], 'big')
         pkt_len = len(packet) - 2
         packet = packet[2:]
-        while pkt_len != enc_len:
+        while pkt_len < enc_len:
             try:
-                packet += self.request.recv(4096)
+                packet += self.request.recv(enc_len - pkt_len)
             except Exception:
                 return
             pkt_len += len(packet)
