@@ -1,6 +1,7 @@
 # Pystub
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doublez13/pystub.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doublez13/pystub/context:python) 
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/doublez13/pystub.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doublez13/pystub/alerts/)
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/doublez13/pystub.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doublez13/pystub/alerts/) 
+![GitHub](https://img.shields.io/github/license/doublez13/pystub)
 
 Pystub is a small DNS stub server written in python with support for DNS over TLS.  
 Pystub also allows importing domain blocklists. In the settings.py file, you can specify a list of domains to be blacklisted, or point to a url that contains a list of domains. This feature can be used to block ad servers or other invasive content.
@@ -29,7 +30,7 @@ Support for the following record types has been implemented with more to come so
 - A
 - NS
 - CNAME
-- SOA
+- SO
 - PTR
 - MX
 - TXT
