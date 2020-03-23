@@ -136,12 +136,12 @@ def gen_header_std_query():
 #RA     : Is recursive support available in the NS
 #Z      : Reserved
 #RCode  : Response Code
-def gen_flags(QR, OpCode, AA, TC, RD, RA, Z, RCode):
+def gen_flags(QR, OpCode=0, AA=0, TC=0, RD=0, RA=0, Z=0, RCode=0):
     flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
     return flags.to_bytes(2, byteorder='big')
 
 def gen_flags_std_query():
-    return gen_flags(0, 0, 0, 0, 1, 0, 0, 0)
+    return gen_flags(0, RD=1)
 
 def parse_flags(flags):
     QR      = (flags >> 15) & 2**1-1
@@ -643,31 +643,34 @@ def process_query(request):
         if 'TXID' not in parsed:
             return None #Drop packet since we can't even reply
         cltxid = parsed['TXID']
+        RD = 0
+        if 'RD' in parsed['FLAG']:
+            RD = parsed['FLAG']['RD']
         if parsed['ERROR'] == "Unsupported qtype":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+            flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
         elif parsed['ERROR'] == "Unsupported qclass":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+            flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
         elif parsed['ERROR'] == "Malformed packet":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+            flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
         elif parsed['ERROR'] == "Error parsing qname":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 1)
+            flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
         elif parsed['ERROR'] == "RCode not implemented":
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 4)
+            flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
         else: #Send back server failure if we don't have a better code
-            flags  = gen_flags(1, 0, 0, 0, 0, 0, 0, 2)
+            flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     cltxid = parsed['TXID']
     RD     = parsed['FLAG']['RD']
     if len(parsed['Question']) == 0:
         print("Empty query")
-        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 1)
+        flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     qname  = parsed['Question'][0]['QNAME']
     qtype  = parsed['Question'][0]['QTYPE']
     qclass = parsed['Question'][0]['QCLASS']
     if any(domain in qname for domain in blacklist) and qtype in ['A', 'AAAA']:
         print("Blocked: " + qname)
-        flags  = gen_flags(1, 0, 0, 0, RD, 1, 0, 0)
+        flags  = gen_flags(1, RD=RD, RA=1)
         header = gen_header(cltxid, flags, 1, 1, 0, 0)
         parsed['ANCount'] = 1
         loopback = '127.0.0.1' if qtype == 'A' else '0000:0000:0000:0000:0000:0000:0000:0001'
@@ -680,12 +683,12 @@ def process_query(request):
 
     #Build and send query upstream
     if debug: print("Generating upstream query")
-    flags  = gen_flags(0, 0, 0, 0, RD, 0, 0, 0)
+    flags  = gen_flags(0, RD=RD)
     header = gen_header(gen_trans_id(), flags, 1, 0, 0, 0)
     query  = gen_question(qname, qtype, qclass)
     if query is None:
         print("Error generating query.")
-        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 2)
+        flags  = gen_flags(1, RD=RD, RCode=2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, query)
     #TODO: Consider making this block a static fuction of upstream
@@ -697,7 +700,7 @@ def process_query(request):
         attempts += 1
     if conn is None:
         print("Error connecting upstream.")
-        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 2)
+        flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     up.sendall(conn, packet)
     if debug: print("Sent upstream query\n")
@@ -709,7 +712,7 @@ def process_query(request):
     parsed = parse_packet(packet)
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
-        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 1)
+        flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     ANCount = parsed['ANCount']
     NSCount = parsed['NSCount']
@@ -720,12 +723,12 @@ def process_query(request):
     #Build and send client response
     if debug: print("Generating client response")
     RCode    = rcode_name_to_int(RCode)
-    flags    = gen_flags(1, 0, 0, 0, RD, 1, 0, RCode)
+    flags    = gen_flags(1, RD=RD, RA=1, RCode=RCode)
     header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
     response = gen_RRs(parsed)
     if response is None:
         print("Error generating client response.")
-        flags  = gen_flags(1, 0, 0, 0, RD, 0, 0, 2)
+        flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, response)
     if debug: print("Sent client response\n\n")
