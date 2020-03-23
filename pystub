@@ -124,10 +124,6 @@ def gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount):
     ARCount  = ARCount.to_bytes(2, 'big')
     return trans_id + flags + QDCount + ANCount + NSCount + ARCount
 
-def gen_header_std_query():
-    return gen_header(gen_trans_id(), gen_flags_std_query(), 1, 0, 0, 0)
-
-
 #QR     : Query: 0, Response: 1
 #OpCode : Standard Query: 0000, Inverse Query: 0100
 #AA     : Authoritative Answer
@@ -139,9 +135,6 @@ def gen_header_std_query():
 def gen_flags(QR, OpCode=0, AA=0, TC=0, RD=0, RA=0, Z=0, RCode=0):
     flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
     return flags.to_bytes(2, byteorder='big')
-
-def gen_flags_std_query():
-    return gen_flags(0, RD=1)
 
 def parse_flags(flags):
     QR      = (flags >> 15) & 2**1-1
