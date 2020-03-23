@@ -608,8 +608,21 @@ def main():
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
-        request = self.request.recv(4096)
-        packet = process_query(request)
+        try:
+            packet = self.request.recv(4096)
+        except Exception:
+            return
+        enc_len = int.from_bytes(packet[:2], 'big')
+        pkt_len = len(packet) - 2
+        packet = packet[2:]
+        while pkt_len != enc_len:
+            try:
+                packet += self.request.recv(4096)
+            except Exception:
+                return
+            pkt_len += len(packet)
+
+        packet = process_query(packet)
         if packet is None:
             return #No response to send back to client
         packet_len = len(packet).to_bytes(2, byteorder='big')
