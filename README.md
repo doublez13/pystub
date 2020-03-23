@@ -7,6 +7,8 @@ Pystub is a small DNS stub server written in python with support for DNS over TL
 Pystub also allows importing domain blocklists. In the settings.py file, you can specify a list of domains to be blacklisted, or point to a url that contains a list of domains. This feature can be used to block ad servers or other invasive content.
 
 ## Getting Started
+By default, Pystub binds to 127.0.0.1:53. This can be modified by changing the `listen` parameter in the pystub.yml file. If left blank, Pystub will bind to all IPs on port 53.
+
 ### Running as a service
 To install Pystub, run the install.sh script. This script installs Pystub, the Pystub configuration file, and a Pystub Systemd unit file. The Systemd unit file is configured to run Pystub as a dynamic (sandboxed) user, with CAP_NET_BIND_SERVICE granted in order to bind to port 53   
 ```
