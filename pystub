@@ -48,7 +48,7 @@ sshfp_algs = {'RSA'    : 1,
               'ECDSA'  : 3,
               'Ed25519': 4}
 
-sshfp_types = {'SHA-1':   1,
+sshfp_types = {'SHA-1'  : 1,
                'SHA-256': 2}
 
 class upstream:
@@ -314,11 +314,19 @@ def parse_rdata(qtype, start, data):
         rdata['TARGET']   = parse_name(start+6, data)
     elif qtype == qtypes['SSHFP']:
         if debug: print("Parsing SSHFP record")
-        alg  = int.from_bytes(data[start:start+1], 'big')
-        fing = int.from_bytes(data[start+1:start+2], 'big')
-        rdata['ALGORITHM']   = reverse_get(sshfp_algs, alg)
-        rdata['FP_TYPE']     = reverse_get(sshfp_types, fing)
-        rdata['FINGERPRINT'] = None #TODO
+        fing_alg  = int.from_bytes(data[start:start+1], 'big')
+        fing_type = int.from_bytes(data[start+1:start+2], 'big')
+        fing_len  = 0
+        if fing_type == 1: fing_len = 20
+        elif fing_type == 2: fing_len = 32
+        fing_alg  = reverse_get(sshfp_algs,  fing_alg)
+        fing_type = reverse_get(sshfp_types, fing_type)
+        if fing_alg is None or fing_type is None:
+            print("Unknown SSHFP algorithm/type encountered")
+            return None
+        rdata['ALGORITHM']   = fing_alg
+        rdata['FP_TYPE']     = fing_type
+        rdata['FINGERPRINT'] = str(data[start+2:start+2+fing_len].hex())
     else:
         print("Parsing not implemented for record type: " + str(qtype))
         rdata = None
@@ -395,6 +403,19 @@ def gen_rdata(data):
         size     = 6 + len(target)
         rdata   += size.to_bytes(2, byteorder='big')
         rdata   += priority + weight + port + target
+    elif qtype == 'SSHFP':
+        if debug: print("Building SSHFP record")
+        fing_alg  = sshfp_algs.get(data['ALGORITHM'])
+        fing_type = sshfp_types.get(data['FP_TYPE'])
+        if fing_alg is None or fing_type is None:
+            print("Unknown SSHFP algorithm/type encountered")
+            return rdata
+        fing_alg  = fing_alg.to_bytes(1, byteorder='big')
+        fing_type = fing_type.to_bytes(1, byteorder='big')
+        fing      = bytes.fromhex(data['FINGERPRINT'])
+        sshfp     = fing_alg + fing_type + fing
+        rdata    += len(sshfp).to_bytes(2, byteorder='big')
+        rdata    += sshfp
     else:
         print("Writing not implmented for record type: " + str(qtype))
         print(data)
