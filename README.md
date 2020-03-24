@@ -38,6 +38,7 @@ Support for the following record types has been implemented with more to come so
 - TXT
 - AAAA
 - SRV
+- SSHFP
 
 ## TODO
 - RFC 1035 compliance
