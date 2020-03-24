@@ -31,7 +31,8 @@ qtypes = {'A'    :  1,
           'MX'   : 15,
           'TXT'  : 16,
           'AAAA' : 28,
-          'SRV'  : 33}
+          'SRV'  : 33,
+          'SSHFP': 44}
 
 qclasses = {'IN': 1}
 
@@ -311,6 +312,13 @@ def parse_rdata(qtype, start, data):
         rdata['WEIGHT']   = int.from_bytes(data[start+2:start+4], 'big')
         rdata['PORT']     = int.from_bytes(data[start+4:start+6], 'big')
         rdata['TARGET']   = parse_name(start+6, data)
+    elif qtype == qtypes['SSHFP']:
+        if debug: print("Parsing SSHFP record")
+        alg  = int.from_bytes(data[start:start+1], 'big')
+        fing = int.from_bytes(data[start+1:start+2], 'big')
+        rdata['ALGORITHM']   = reverse_get(sshfp_algs, alg)
+        rdata['FP_TYPE']     = reverse_get(sshfp_types, fing)
+        rdata['FINGERPRINT'] = None #TODO
     else:
         print("Parsing not implemented for record type: " + str(qtype))
         rdata = None
