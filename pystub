@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-#DNS stub server with support for DNS over TLS.
+# DNS stub server with support for DNS over TLS.
 #
-#RFC 1035: DOMAIN NAMES - IMPLEMENTATION AND SPECIFICATION
-#RFC 7766: DNS Transport over TCP - Implementation Requirements
-#RFC 7858: Specification for DNS over Transport Layer Security (TLS)
+# RFC 1035: DOMAIN NAMES - IMPLEMENTATION AND SPECIFICATION
+# RFC 7766: DNS Transport over TCP - Implementation Requirements
+# RFC 7858: Specification for DNS over Transport Layer Security (TLS)
 #
-#SSHFP RFCs
-#RFC 4255: Using DNS to Securely Publish Secure Shell (SSH) Key Fingerprints
-#RFC 6594: Use of the SHA-256 Algorithm with RSA, Digital Signature Algorithm (DSA), and Elliptic Curve DSA (ECDSA) in SSHFP Resource Records
-#RFC 7479: Using Ed25519 in SSHFP Resource Records
-#Status: Work in Progress
+# SSHFP RFCs
+# RFC 4255: Using DNS to Securely Publish Secure Shell (SSH) Key Fingerprints
+# RFC 6594: Use of the SHA-256 Algorithm with RSA, Digital Signature Algorithm (DSA), and Elliptic Curve DSA (ECDSA) in SSHFP Resource Records
+# RFC 7479: Using Ed25519 in SSHFP Resource Records
+# Status: Work in Progress
 
 import socket
 import socketserver
@@ -51,12 +51,13 @@ sshfp_algs = {'RSA'    : 1,
 sshfp_types = {'SHA-1'  : 1,
                'SHA-256': 2}
 
+
 class upstream:
     upstreams = []
     enabled   = []
 
     def __init__(self, addr, tls_name, port, tcp):
-        #TODO: verify valid input
+        # TODO: verify valid input
         self.address  = addr
         self.tls_name = tls_name
         self.port     = port
@@ -72,7 +73,7 @@ class upstream:
         return random.choice(upstream.enabled)
 
     def connect(self):
-        timeout = 2 #Seconds
+        timeout = 2  #Seconds
         if self.tls:
             cnxt  = ssl.create_default_context()
             try:
@@ -127,6 +128,12 @@ class upstream:
             except Exception:
                 return ""
 
+
+# Reverse map function for 1:1 dictionaries
+def reverse_get(dictionary, value):
+    rev = {v: k for k, v in dictionary.items()}
+    return rev.get(value)
+
 def gen_packet(header, query):
     return header + query
 
@@ -138,14 +145,14 @@ def gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount):
     ARCount  = ARCount.to_bytes(2, 'big')
     return trans_id + flags + QDCount + ANCount + NSCount + ARCount
 
-#QR     : Query: 0, Response: 1
-#OpCode : Standard Query: 0000, Inverse Query: 0100
-#AA     : Authoritative Answer
-#TC     : Is Message truncated
-#RD     : Do query recursively
-#RA     : Is recursive support available in the NS
-#Z      : Reserved
-#RCode  : Response Code
+# QR     : Query: 0, Response: 1
+# OpCode : Standard Query: 0000, Inverse Query: 0100
+# AA     : Authoritative Answer
+# TC     : Is Message truncated
+# RD     : Do query recursively
+# RA     : Is recursive support available in the NS
+# Z      : Reserved
+# RCode  : Response Code
 def gen_flags(QR, OpCode=0, AA=0, TC=0, RD=0, RA=0, Z=0, RCode=0):
     flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
     return flags.to_bytes(2, byteorder='big')
@@ -158,15 +165,10 @@ def parse_flags(flags):
     RD      = (flags >>  8) & 2**1-1
     RA      = (flags >>  7) & 2**1-1
     Z       = (flags >>  6) & 2**1-1
-    AD      = (flags >>  5) & 2**1-1 #RFC 4035
-    CD      = (flags >>  4) & 2**1-1 #RFC 4035
+    AD      = (flags >>  5) & 2**1-1  #RFC 4035
+    CD      = (flags >>  4) & 2**1-1  #RFC 4035
     RCode   = (flags >>  0) & 2**4-1
     return {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
-
-#Reverse map function for 1:1 dictionaries
-def reverse_get(dictionary, value):
-    rev = {v: k for k, v in dictionary.items()}
-    return rev.get(value)
 
 def gen_name(qname):
     if not isinstance(qname, str):
@@ -191,7 +193,7 @@ def parse_name(start, packet, pointers=None):
     pointers.append(start)
     name_str = ''
     i = start
-    while i < len(packet): 
+    while i < len(packet):
         if packet[i] > 0:
             if(packet[i] >= 0xc0):
                 if debug: print("Compressed name received. Following reference")
@@ -256,7 +258,7 @@ def parse_question(start, data):
         return {'ERROR':'Unsupported qtype: ' + str(qtype_int)}
     qclass_int = int.from_bytes(data[pos+2:pos+4], 'big')
     qclass = reverse_get(qclasses, qclass_int)
-    if qclass is None: 
+    if qclass is None:
         return {'ERROR':'Unsupported qclass: ' + str(qclass_int)}
     return {'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass}
 
@@ -306,7 +308,7 @@ def parse_rdata(qtype, start, data):
         AAAA = ''
         for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
         rdata['ADDRESS'] = AAAA[:-1]
-    elif qtype == qtypes['SRV']: #RFC 2782
+    elif qtype == qtypes['SRV']:  #RFC 2782
         if debug: print("Parsing SRV record")
         rdata['PRIORITY'] = int.from_bytes(data[start:start+2], 'big')
         rdata['WEIGHT']   = int.from_bytes(data[start+2:start+4], 'big')
@@ -334,7 +336,7 @@ def parse_rdata(qtype, start, data):
 
 def gen_rdata(data):
     rdata = b''
-    qtype = data['QTYPE'];
+    qtype = data['QTYPE']
     if qtype == 'A':
         if debug: print("Building A record")
         size   = 4
@@ -453,16 +455,16 @@ def gen_RRs(data):
             tmp_res += qclasses[qclass].to_bytes(2, byteorder='big')
             tmp_res += ttl.to_bytes(4, byteorder='big')
             rdata    = gen_rdata(data[section][i])
-            if len(rdata) > 0 : #Type implemented
+            if len(rdata) > 0 :  #Type implemented
                 tmp_res  += rdata
                 response += tmp_res
     return response
 
 def parse_packet(packet):
     ret = {}
-    pkt_len = len(packet) #Length of the packet received
+    pkt_len = len(packet)
     
-    #parse header
+    # parse header
     if pkt_len < 12:
         print("Packet length too short.")
         ret['ERROR'] = "Packet length too short"
@@ -470,10 +472,10 @@ def parse_packet(packet):
     header = packet[:12]
     trans_id = int.from_bytes(header[:2], 'big')
     flags    = int.from_bytes(header[2:4], 'big')
-    QDCount  = int.from_bytes(header[4:6], 'big')   #Number of questions
-    ANCount  = int.from_bytes(header[6:8], 'big')   #Number of answers
-    NSCount  = int.from_bytes(header[8:10], 'big')  #Number of NS RRs
-    ARCount  = int.from_bytes(header[10:12], 'big') #Number of add RRS
+    QDCount  = int.from_bytes(header[4:6], 'big')    #Number of questions
+    ANCount  = int.from_bytes(header[6:8], 'big')    #Number of answers
+    NSCount  = int.from_bytes(header[8:10], 'big')   #Number of NS RRs
+    ARCount  = int.from_bytes(header[10:12], 'big')  #Number of add RRS
 
     ret['TXID'] = trans_id
 
@@ -502,10 +504,10 @@ def parse_packet(packet):
         qdata = parse_question(pos, packet)
         if 'ERROR' in qdata:
             ret['ERROR'] = qdata['ERROR']
-            #TODO: Should we set QDCount to 0?
+            # TODO: Should we set QDCount to 0?
             return ret
         pos = skip_name(pos, packet)+4
-        #Probably not going to support multiple queries, but storing in list anyway
+        # Probably not going to support multiple queries, but storing in list anyway
         ret['Question'] = []
         ret['Question'].append(qdata)
     for section in ('Answer', 'Authority', "Additional"):
@@ -517,8 +519,8 @@ def parse_packet(packet):
             count = ARCount
         if count and debug: print("Response contains " + section + " section. Parsing...")
         ret[section] = []
-        if pkt_len < pos + count*10: #sanity check so we don't loop a crazy number of times on a malformed packet
-            ret['ERROR'] = "Malformed packet" #TODO: revisit this when we wire up truncation
+        if pkt_len < pos + count*10:  # Sanity check so we don't loop a crazy number of times on a malformed packet
+            ret['ERROR'] = "Malformed packet"  # TODO: revisit this when we wire up truncation
             return ret
         for i in range(count):
             qname = parse_name(pos, packet)
@@ -535,7 +537,7 @@ def parse_packet(packet):
                 ret['ERROR'] = "Malformed packet"
                 return ret
             RData = parse_rdata(qtype, pos, packet)
-            if RData is None: #unable to parse rdata record. Decrement appropriate count
+            if RData is None:  # Unable to parse rdata record. Decrement appropriate count
                 if   section == 'Answer':     ret['ANCount'] -= 1
                 elif section == 'Authority':  ret['NSCount'] -= 1
                 elif section == 'Additional': ret['ARCount'] -= 1
@@ -547,6 +549,7 @@ def parse_packet(packet):
                 ret[section].append(RData)
             pos += RDlength
     return ret
+
 
 ######DEFAULT SETTINGS######
 deflt_cnfg_file = '/etc/pystub.yml'
@@ -561,6 +564,8 @@ upstrm_cnfgs = [
                ]
 blacklist = []
 #############################
+
+
 def main():
     global debug
     global upstrm_cnfgs
@@ -592,7 +597,7 @@ def main():
         upstrm_cnfgs = config["upstreams"]
     listen_add = ""
     if "listen" in config and len(config["listen"]) > 0:
-        listen_add = config["listen"][0] #TODO: support for multiple listen addresses
+        listen_add = config["listen"][0]  # TODO: support for multiple listen addresses
     if "blacklist" in config and len(config["blacklist"]) > 0:
         domain_regex = "^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$"
         if "url" in config["blacklist"]:
@@ -612,10 +617,10 @@ def main():
                     blacklist.append(domain)
         print("Imported " + str(len(blacklist)) + " blacklist domains")
 
-    #Parse upstreams
+    # Parse upstreams
     for cnfg in upstrm_cnfgs:
         new_upstr = upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
-        new_upstr.connect() #TODO: implement better verification
+        new_upstr.connect()  # TODO: implement better verification
 
     tcp_server = ThreadedTCPServer((listen_add, 53), ThreadedTCPRequestHandler)
     tcp_server_thread = threading.Thread(target=tcp_server.serve_forever)
@@ -644,7 +649,7 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
 
         packet = process_query(packet)
         if packet is None:
-            return #No response to send back to client
+            return  # No response to send back to client
         packet_len = len(packet).to_bytes(2, byteorder='big')
         packet = packet_len + packet
         self.request.sendall(packet)
@@ -654,7 +659,7 @@ class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
         request = self.request[0]
         packet = process_query(request)
         if packet is None:
-            return #No response to send back to client
+            return  # No response to send back to client
         self.request[1].sendto(packet, self.client_address)
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pass
@@ -667,7 +672,7 @@ def process_query(request):
     if 'ERROR' in parsed:
         print('ERROR: '+parsed['ERROR'])
         if 'TXID' not in parsed:
-            return None #Drop packet since we can't even reply
+            return None  # Drop packet since we can't even reply
         cltxid = parsed['TXID']
         RD = 0
         if 'RD' in parsed['FLAG']:
@@ -682,7 +687,7 @@ def process_query(request):
             flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
         elif parsed['ERROR'] == "RCode not implemented":
             flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
-        else: #Send back server failure if we don't have a better code
+        else:  # Send back server failure if we don't have a better code
             flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     cltxid = parsed['TXID']
@@ -707,7 +712,7 @@ def process_query(request):
         return packet
     if debug: print("Client query parsed\n")
 
-    #Build and send query upstream
+    # Build and send query upstream
     if debug: print("Generating upstream query")
     flags  = gen_flags(0, RD=RD)
     header = gen_header(gen_trans_id(), flags, 1, 0, 0, 0)
@@ -717,10 +722,10 @@ def process_query(request):
         flags  = gen_flags(1, RD=RD, RCode=2)
         return gen_header(cltxid, flags, 0, 0, 0, 0)
     packet = gen_packet(header, query)
-    #TODO: Consider making this block a static fuction of upstream
+    # TODO: Consider making this block a static fuction of upstream
     conn = None
     attempts = 0
-    while conn is None and attempts < 10: #TODO: parallel?
+    while conn is None and attempts < 10:  #TODO: parallel?
         up = upstream.get_server()
         conn = up.connect()
         attempts += 1
@@ -731,7 +736,7 @@ def process_query(request):
     up.sendall(conn, packet)
     if debug: print("Sent upstream query\n")
 
-    #Receive and parse upstream response
+    # Receive and parse upstream response
     packet = up.recvall(conn)
     up.close(conn)
     if debug: print("Received upstream response")
@@ -746,7 +751,7 @@ def process_query(request):
     RCode   = parsed['RCODE']
     if debug: print("Upstream response parsed\n")
 
-    #Build and send client response
+    # Build and send client response
     if debug: print("Generating client response")
     RCode    = reverse_get(rcodes, RCode)
     flags    = gen_flags(1, RD=RD, RA=1, RCode=RCode)
@@ -759,6 +764,7 @@ def process_query(request):
     packet = gen_packet(header, response)
     if debug: print("Sent client response\n\n")
     return packet
+
 
 if __name__ == "__main__":
     main()
