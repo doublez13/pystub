@@ -167,10 +167,13 @@ class DNSMessage:
         return json.dumps(pretty, indent=2)
 
     def to_bytes(self):
-        return self.__header_to_bytes() + self.__RRs_to_bytes()
+        header_bytes = self.__header_to_bytes()
+        RR_bytes = self.__RRs_to_bytes()
+        if header_bytes is None or RR_bytes is None:
+            return None
+        return header_bytes + RR_bytes
 
 
-    #This used to be gen_header 
     def __header_to_bytes(self):
         trans_id = self.TXID.to_bytes(2, 'big')
         flags    = self.__flags_to_bytes()
@@ -197,7 +200,6 @@ class DNSMessage:
         if ARCount: self.ARCount = ARCount
 
 
-    #This used to be gen_flags
     # QR     : Query: 0, Response: 1
     # OpCode : Standard Query: 0000, Inverse Query: 0100
     # AA     : Authoritative Answer
@@ -333,6 +335,8 @@ class DNSMessage:
                 i+=count+1
             else:
                 name_str = name_str[:-1]
+                if len(name_str) > 253: #Domain length restriction
+                    return None
                 return name_str
         return None
    
@@ -549,7 +553,8 @@ class DNSMessage:
                     tmp_res  += rdata
                     response += tmp_res
         return response
-   
+
+    #TODO: add option for shallow copy
     def copy_RRs(self, source, sections=['Question', 'Answer', 'Authority', 'Additional']):
         for section in sections:
             if section == 'Question':
@@ -761,6 +766,7 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pa
 def process_query(request):
     if debug: print("Received client query")
     request = DNSMessage(request)
+    print(request)
     if request.ERROR:
         print('ERROR: '+request.ERROR)
         if request.TXID == -1:
@@ -783,7 +789,7 @@ def process_query(request):
         response.set_header(TXID=cltxid, QDCount=0, ANCount=0, NSCount=0, ARCount=0)
         return response.to_bytes()
     cltxid = request.TXID
-    RD     = request.FLAG['RD']
+    RD = request.FLAG['RD']
     if len(request.Question) == 0:
         print("Received empty query")
         response = DNSMessage()
@@ -813,6 +819,12 @@ def process_query(request):
     up_request.set_header(QDCount=1)
     up_request.set_question(qname, qtype, qclass)
     packet = up_request.to_bytes()
+    if packet is None:
+        print('Error converting packet to bytes')
+        response = DNSMessage()
+        response.set_flags(QR=1, RD=RD, RA=1, RCode=2)
+        response.set_header(TXID=cltxid)
+        return response.to_bytes()
     # TODO: Consider making this block a static fuction of upstream
     conn = None
     attempts = 0
