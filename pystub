@@ -256,8 +256,14 @@ class DNSMessage:
         query = DNSMessage.name_to_bytes(quest['QNAME'])
         if query is None:
             return None
-        query += DNSMessage.qtypes[quest['QTYPE']].to_bytes(2, byteorder='big')
-        query += DNSMessage.qclasses[quest['QCLASS']].to_bytes(2, byteorder='big')
+        qtype = DNSMessage.qtypes.get(quest['QTYPE'])
+        if qtype is None:
+            return None
+        query += qtype.to_bytes(2, byteorder='big')
+        qclass = DNSMessage.qclasses.get(quest['QCLASS'])
+        if qclass is None:
+            return None
+        query += qclass.to_bytes(2, byteorder='big')
         return query
 
     def __bytes_to_question(self, start, data):
