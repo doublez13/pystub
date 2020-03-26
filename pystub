@@ -193,11 +193,16 @@ class DNSMessage:
         self.__bytes_to_flags(flags)
   
     def set_header(self, TXID=None, QDCount=None, ANCount=None, NSCount=None, ARCount=None):
-        if TXID: self.TXID = TXID
-        if QDCount: self.QDCount = QDCount
-        if ANCount: self.ANCount = ANCount
-        if NSCount: self.NSCount = NSCount
-        if ARCount: self.ARCount = ARCount
+        if TXID and type(TXID) is int and TXID > 0:
+            self.TXID = TXID
+        if QDCount and type(QDCount) is int and QDCount > 0:
+            self.QDCount = QDCount
+        if ANCount and type(ANCount) is int and ANCount > 0:
+            self.ANCount = ANCount
+        if NSCount and type(NSCount) is int and NSCount > 0:
+            self.NSCount = NSCount
+        if ARCount and type(ARCount) is int and ARCount > 0:
+            self.ARCount = ARCount
 
 
     # QR     : Query: 0, Response: 1
@@ -249,6 +254,8 @@ class DNSMessage:
     def __question_to_bytes(self):
         quest = self.Question
         query = DNSMessage.name_to_bytes(quest['QNAME'])
+        if query is None:
+            return None
         query += DNSMessage.qtypes[quest['QTYPE']].to_bytes(2, byteorder='big')
         query += DNSMessage.qclasses[quest['QCLASS']].to_bytes(2, byteorder='big')
         return query
@@ -277,10 +284,10 @@ class DNSMessage:
     def set_question(self, qname, qtype, qclass):
         if qtype not in DNSMessage.qtypes.keys():
             print("Support not implemented for record type: " + str(qtype))
-            return None
+            self.ERROR = "Support not implemented for record type: " + str(qtype)
         if qclass not in DNSMessage.qclasses.keys():
             print("Support not implemented for query class type: " + str(qclass))
-            return None
+            self.ERROR ="Support not implemented for query class type: " + str(qclass)
         self.Question.append({'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass})
 
 
@@ -594,10 +601,9 @@ class DNSMessage:
             if self.QDCount > 1:
                 print("QDCount > 1 not supported. Disregarding additional queries")
                 self.QDCount = 1
+                # We're not jumping over the other queries, corrupting the other sections?
             self.__bytes_to_question(pos, packet)
-            if self.ERROR:
-                # TODO: Should we set QDCount to 0?
-                return
+            if self.ERROR: return
             pos = DNSMessage.skip_name(pos, packet)+4
         for section in ('Answer', 'Authority', "Additional"):
             if section == 'Answer':
@@ -615,8 +621,14 @@ class DNSMessage:
                 return
             for _ in range(count):
                 qname = DNSMessage.bytes_to_name(pos, packet)
-                pos   = DNSMessage.skip_name(pos, packet)
-                if pkt_len < pos+10:
+                if qname is None:
+                    self.ERROR = "Error parsing name"
+                    return
+                pos = DNSMessage.skip_name(pos, packet)
+                if pos == -1:
+                    self.ERROR = "Error parsing name"
+                    return
+                if pkt_len < pos + 10:
                     self.ERROR = "Malformed packet"
                     return
                 qtype    = int.from_bytes(packet[pos:pos+2], 'big')
@@ -766,7 +778,6 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pa
 def process_query(request):
     if debug: print("Received client query")
     request = DNSMessage(request)
-    print(request)
     if request.ERROR:
         print('ERROR: '+request.ERROR)
         if request.TXID == -1:
