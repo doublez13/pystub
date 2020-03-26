@@ -17,40 +17,13 @@ import threading
 import random
 import sys
 import ssl
-import yaml
+import json
+import copy
 import re
 import urllib.request
 import argparse
 import os
-
-qtypes = {'A'    :  1,
-          'NS'   :  2,
-          'CNAME':  5,
-          'SOA'  :  6,
-          'PTR'  : 12,
-          'MX'   : 15,
-          'TXT'  : 16,
-          'AAAA' : 28,
-          'SRV'  : 33,
-          'SSHFP': 44}
-
-qclasses = {'IN': 1}
-
-rcodes = {0: "No Error",
-          1: "Format Error",
-          2: "Server Failure",
-          3: "Non-Existent Domain",
-          4: "Not Implemented",
-          5: "Query Refused"}
-
-sshfp_algs = {'RSA'    : 1,
-              'DSS'    : 2,
-              'ECDSA'  : 3,
-              'Ed25519': 4}
-
-sshfp_types = {'SHA-1'  : 1,
-               'SHA-256': 2}
-
+import yaml
 
 class upstream:
     upstreams = []
@@ -129,426 +102,545 @@ class upstream:
                 return ""
 
 
-# Reverse map function for 1:1 dictionaries
-def reverse_get(dictionary, value):
-    rev = {v: k for k, v in dictionary.items()}
-    return rev.get(value)
+class DNSMessage:
+    qtypes = {'A'    :  1,
+              'NS'   :  2,
+              'CNAME':  5,
+              'SOA'  :  6,
+              'PTR'  : 12,
+              'MX'   : 15,
+              'TXT'  : 16,
+              'AAAA' : 28,
+              'SRV'  : 33,
+              'SSHFP': 44}
 
-def gen_packet(header, query):
-    return header + query
+    qclasses = {'IN': 1}
+    
+    rcodes = {0: "No Error",
+              1: "Format Error",
+              2: "Server Failure",
+              3: "Non-Existent Domain",
+              4: "Not Implemented",
+              5: "Query Refused"}
+    
+    sshfp_algs = {'RSA'    : 1,
+                  'DSS'    : 2,
+                  'ECDSA'  : 3,
+                  'Ed25519': 4}
+    
+    sshfp_types = {'SHA-1'  : 1,
+                   'SHA-256': 2}
 
-def gen_header(trans_id, flags, QDCount, ANCount, NSCount, ARCount):
-    trans_id = trans_id.to_bytes(2, 'big')
-    QDCount  = QDCount.to_bytes(2, 'big')
-    ANCount  = ANCount.to_bytes(2, 'big')
-    NSCount  = NSCount.to_bytes(2, 'big')
-    ARCount  = ARCount.to_bytes(2, 'big')
-    return trans_id + flags + QDCount + ANCount + NSCount + ARCount
+    def __init__(self, packet=None):
+        self.ERROR = None
+        self.TXID = -1
+        self.FLAG = {"QR": 0,
+                     "OpCode": 0,
+                     "AA": 0,
+                     "TC": 0,
+                     "RD": 1,
+                     "RA": 0,
+                     "Z": 0,
+                     "AD": 0,
+                     "CD": 0,
+                     "RCode": 0
+                    }
+        self.QDCount = 0 
+        self.ANCount = 0
+        self.NSCount = 0
+        self.ARCount = 0
+        self.Question = []
+        self.Answer = []
+        self.Authority = []
+        self.Additional = []
+        if isinstance(packet, bytes):
+            self.__parse_packet(packet)
 
-# QR     : Query: 0, Response: 1
-# OpCode : Standard Query: 0000, Inverse Query: 0100
-# AA     : Authoritative Answer
-# TC     : Is Message truncated
-# RD     : Do query recursively
-# RA     : Is recursive support available in the NS
-# Z      : Reserved
-# RCode  : Response Code
-def gen_flags(QR, OpCode=0, AA=0, TC=0, RD=0, RA=0, Z=0, RCode=0):
-    flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
-    return flags.to_bytes(2, byteorder='big')
 
-def parse_flags(flags):
-    QR      = (flags >> 15) & 2**1-1
-    OpCode  = (flags >> 11) & 2**4-1
-    AA      = (flags >> 10) & 2**1-1
-    TC      = (flags >>  9) & 2**1-1
-    RD      = (flags >>  8) & 2**1-1
-    RA      = (flags >>  7) & 2**1-1
-    Z       = (flags >>  6) & 2**1-1
-    AD      = (flags >>  5) & 2**1-1  #RFC 4035
-    CD      = (flags >>  4) & 2**1-1  #RFC 4035
-    RCode   = (flags >>  0) & 2**4-1
-    return {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
+    def __str__(self):
+        return str(self.to_json())
 
-def gen_name(qname):
-    if not isinstance(qname, str):
-        return None
-    if len(qname) > 253:
-        return None
-    dns_name = str.encode('')
-    parts = qname.split('.')
-    for part in parts:
-        if len(part) > 63:
+    def to_json(self):
+        pretty = {'ERROR': self.ERROR, 'TXID': self.TXID, 'FLAG': self.FLAG,
+                  'QDCount': self.QDCount, 'ANCount': self.ANCount, 'NSCount': self.NSCount, 'ARCount': self.ARCount,
+                  'Question': self.Question, 'Answer': self.Answer, 'Authority': self.Authority, 'Additional': self.Additional}
+        return json.dumps(pretty, indent=2)
+
+    def to_bytes(self):
+        return self.__header_to_bytes() + self.__RRs_to_bytes()
+
+
+    #This used to be gen_header 
+    def __header_to_bytes(self):
+        trans_id = self.TXID.to_bytes(2, 'big')
+        flags    = self.__flags_to_bytes()
+        QDCount  = self.QDCount.to_bytes(2, 'big')
+        ANCount  = self.ANCount.to_bytes(2, 'big')
+        NSCount  = self.NSCount.to_bytes(2, 'big')
+        ARCount  = self.ARCount.to_bytes(2, 'big')
+        return trans_id + flags + QDCount + ANCount + NSCount + ARCount
+
+    def __bytes_to_header(self, header):
+        self.TXID     = int.from_bytes(header[:2], 'big')
+        self.QDCount  = int.from_bytes(header[4:6], 'big')
+        self.ANCount  = int.from_bytes(header[6:8], 'big')
+        self.NSCount  = int.from_bytes(header[8:10], 'big')
+        self.ARCount  = int.from_bytes(header[10:12], 'big')
+        flags = int.from_bytes(header[2:4], 'big')
+        self.__bytes_to_flags(flags)
+  
+    def set_header(self, TXID=None, QDCount=None, ANCount=None, NSCount=None, ARCount=None):
+        if TXID: self.TXID = TXID
+        if QDCount: self.QDCount = QDCount
+        if ANCount: self.ANCount = ANCount
+        if NSCount: self.NSCount = NSCount
+        if ARCount: self.ARCount = ARCount
+
+
+    #This used to be gen_flags
+    # QR     : Query: 0, Response: 1
+    # OpCode : Standard Query: 0000, Inverse Query: 0100
+    # AA     : Authoritative Answer
+    # TC     : Is Message truncated
+    # RD     : Do query recursively
+    # RA     : Is recursive support available in the NS
+    # Z      : Reserved
+    # RCode  : Response Code
+    def __flags_to_bytes(self):
+        QR = self.FLAG["QR"]
+        OpCode =self.FLAG["OpCode"]
+        AA = self.FLAG["AA"]
+        TC = self.FLAG["TC"]
+        RD = self.FLAG["RD"]
+        RA = self.FLAG["RA"]
+        Z = self.FLAG["Z"]
+        RCode = self.FLAG["RCode"]
+        flags = QR*(2**15) | OpCode*(2**11) | AA*(2**10)| TC*(2**9) | RD*(2**8) | RA*(2**7) | Z*(2**4) | RCode
+        return flags.to_bytes(2, byteorder='big')
+
+    def __bytes_to_flags(self, flags):
+        QR      = (flags >> 15) & 2**1-1
+        OpCode  = (flags >> 11) & 2**4-1
+        AA      = (flags >> 10) & 2**1-1
+        TC      = (flags >>  9) & 2**1-1
+        RD      = (flags >>  8) & 2**1-1
+        RA      = (flags >>  7) & 2**1-1
+        Z       = (flags >>  6) & 2**1-1
+        AD      = (flags >>  5) & 2**1-1  #RFC 4035
+        CD      = (flags >>  4) & 2**1-1  #RFC 4035
+        RCode   = (flags >>  0) & 2**4-1
+        self.FLAG = {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
+
+    def set_flags(self, QR=None, OpCode=None, AA=None, TC=None, RD=None, RA=None, Z=None, AD=None, CD=None, RCode=None):
+        if QR: self.FLAG["QR"] = QR
+        if OpCode: self.FLAG["OpCode"] = OpCode
+        if AA: self.FLAG["AA"] = AA
+        if TC: self.FLAG["TC"] = TC
+        if RD: self.FLAG["RD"] = RD
+        if RA: self.FLAG["RA"] = RA
+        if Z:  self.FLAG["Z"]  = Z
+        if AD: self.FLAG["AD"] = AD
+        if CD: self.FLAG["CD"] = CD
+        if RCode: self.FLAG["RCode"] = RCode
+
+
+    def __question_to_bytes(self):
+        quest = self.Question
+        query = DNSMessage.name_to_bytes(quest['QNAME'])
+        query += DNSMessage.qtypes[quest['QTYPE']].to_bytes(2, byteorder='big')
+        query += DNSMessage.qclasses[quest['QCLASS']].to_bytes(2, byteorder='big')
+        return query
+
+    def __bytes_to_question(self, start, data):
+        qname = DNSMessage.bytes_to_name(start, data)
+        if qname is None:
+            self.ERROR = 'Error parsing qname'
+            return
+        pos = DNSMessage.skip_name(start, data)
+        if pos < 0 or len(data) < pos+4:
+            self.ERROR = 'Malformed packet'
+            return
+        qtype_int = int.from_bytes(data[pos:pos+2], 'big')
+        qtype = DNSMessage.__reverse_get(DNSMessage.qtypes, qtype_int)
+        if qtype is None:
+            self.ERROR = 'Unsupported qtype: ' + str(qtype_int)
+            return
+        qclass_int = int.from_bytes(data[pos+2:pos+4], 'big')
+        qclass = DNSMessage.__reverse_get(DNSMessage.qclasses, qclass_int)
+        if qclass is None:
+            self.ERROR = 'Unsupported qclass: ' + str(qclass_int)
+            return
+        self.Question.append({'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass})
+
+    def set_question(self, qname, qtype, qclass):
+        if qtype not in DNSMessage.qtypes.keys():
+            print("Support not implemented for record type: " + str(qtype))
             return None
-        dns_name += str.encode(chr(len(part))+part)
-    dns_name += str.encode(chr(0))
-    return dns_name
+        if qclass not in DNSMessage.qclasses.keys():
+            print("Support not implemented for query class type: " + str(qclass))
+            return None
+        self.Question.append({'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass})
 
-def parse_name(start, packet, pointers=None):
-    if pointers is None:
-        pointers = []
-    if start in pointers:
-        print("Circular name reference detected. Aborting name parsing...")
-        return None
-    pointers.append(start)
-    name_str = ''
-    i = start
-    while i < len(packet):
-        if packet[i] > 0:
-            if(packet[i] >= 0xc0):
-                if debug: print("Compressed name received. Following reference")
-                offset = int.from_bytes(packet[i:i+2], 'big') & 2**14-1
-                parsed = parse_name(offset, packet, pointers)
-                if parsed is None:
-                    return parsed
-                name_str += parsed
+
+    def gen_txid(self):
+        self.TXID = random.randrange(2**16-1) 
+
+    @staticmethod
+    def name_to_bytes(qname):
+        if not isinstance(qname, str):
+            return None
+        if len(qname) > 253:
+            return None
+        dns_name = str.encode('')
+        parts = qname.split('.')
+        for part in parts:
+            if len(part) > 63:
+                return None
+            dns_name += str.encode(chr(len(part))+part)
+        dns_name += str.encode(chr(0))
+        return dns_name
+
+    @staticmethod
+    def bytes_to_name(start, packet, pointers=None):
+        if pointers is None:
+            pointers = []
+        if start in pointers:
+            print("Circular name reference detected. Aborting name parsing...")
+            return None
+        pointers.append(start)
+        name_str = ''
+        i = start
+        while i < len(packet):
+            if packet[i] > 0:
+                if(packet[i] >= 0xc0):
+                    if debug: print("Compressed name received. Following reference")
+                    offset = int.from_bytes(packet[i:i+2], 'big') & 2**14-1
+                    parsed = DNSMessage.bytes_to_name(offset, packet, pointers)
+                    if parsed is None:
+                        return parsed
+                    name_str += parsed
+                    return name_str
+                count = packet[i]
+                if len(packet) < i+count+1:
+                    print("Malformed name")
+                    return None
+                name_bytes = packet[i+1:i+count+1]
+                if any(byte > 127 for byte in name_bytes):
+                    print("Non ascii character received. This is not supported yet")
+                    return None
+                name_str += name_bytes.decode("ascii")
+                name_str += '.'
+                i+=count+1
+            else:
+                name_str = name_str[:-1]
                 return name_str
-            count = packet[i]
-            if len(packet) < i+count+1:
-                print("Malformed name")
+        return None
+   
+    @staticmethod
+    def skip_name(start, data):
+        i = start
+        while i < len(data):
+            if data[i] > 0:
+                if data[i] >= 0xc0:
+                    return i + 2
+                i += 1
+            else:
+                return i + 1
+        return -1
+
+    @staticmethod
+    def __bytes_to_rdata(qtype, start, data):
+        rdata = {}
+        if qtype == DNSMessage.qtypes['A']:
+            if debug: print("Parsing A record")
+            rdata['ADDRESS'] = str(data[start])+'.'+str(data[start+1])+'.'+str(data[start+2])+'.'+str(data[start+3])
+        elif qtype == DNSMessage.qtypes['NS']:
+            if debug: print("Parsing NS record")
+            rdata['NSDNAME'] = DNSMessage.bytes_to_name(start, data)
+        elif qtype == DNSMessage.qtypes['CNAME']:
+            if debug: print("Parsing CNAME record")
+            rdata['CNAME'] = DNSMessage.bytes_to_name(start, data)
+        elif qtype == DNSMessage.qtypes['SOA']:
+            if debug: print("Parsing SOA record")
+            rdata['MNAME']  = DNSMessage.bytes_to_name(start, data)
+            start = DNSMessage.skip_name(start, data)
+            rdata['RNAME']  = DNSMessage.bytes_to_name(start, data)
+            start = DNSMessage.skip_name(start, data)
+            rdata['SERIAL']  = int.from_bytes(data[start:start+4], 'big')
+            rdata['REFRESH'] = int.from_bytes(data[start+4:start+8], 'big')
+            rdata['RETRY']   = int.from_bytes(data[start+8:start+12], 'big')
+            rdata['EXPIRE']  = int.from_bytes(data[start+12:start+16], 'big')
+            rdata['MINIMUM'] = int.from_bytes(data[start+16:start+20], 'big')
+        elif qtype == DNSMessage.qtypes['PTR']:
+            if debug: print("Parsing PTR record")
+            rdata['PTRDNAME'] = DNSMessage.bytes_to_name(start, data)
+        elif qtype == DNSMessage.qtypes['MX']:
+            if debug: print("Parsing MX record")
+            rdata['PREFERENCE'] = int.from_bytes(data[start:start+2], 'big')
+            rdata['EXCHANGE']   = DNSMessage.bytes_to_name(start+2, data)
+        elif qtype == DNSMessage.qtypes['TXT']:
+            if debug: print("Parsing TXT record")
+            length = int.from_bytes(data[start-2:start], 'big')
+            curr_size = 0
+            rdata['TXT-DATA'] = []
+            while curr_size < length and data[start+curr_size]:
+                size = data[start+curr_size]
+                rdata['TXT-DATA'].append(data[start+curr_size+1:start+curr_size+1+size].decode("ascii"))
+                curr_size += (1+size)
+        elif qtype == DNSMessage.qtypes['AAAA']:
+            if debug: print("Parsing AAAA record")
+            AAAA = ''
+            for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
+            rdata['ADDRESS'] = AAAA[:-1]
+        elif qtype == DNSMessage.qtypes['SRV']:  #RFC 2782
+            if debug: print("Parsing SRV record")
+            rdata['PRIORITY'] = int.from_bytes(data[start:start+2], 'big')
+            rdata['WEIGHT']   = int.from_bytes(data[start+2:start+4], 'big')
+            rdata['PORT']     = int.from_bytes(data[start+4:start+6], 'big')
+            rdata['TARGET']   = DNSMessage.bytes_to_name(start+6, data)
+        elif qtype == DNSMessage.qtypes['SSHFP']:
+            if debug: print("Parsing SSHFP record")
+            fing_alg  = int.from_bytes(data[start:start+1], 'big')
+            fing_type = int.from_bytes(data[start+1:start+2], 'big')
+            fing_len  = 0
+            if fing_type == 1: fing_len = 20
+            elif fing_type == 2: fing_len = 32
+            fing_alg  = DNSMessage.__reverse_get(DNSMessage.sshfp_algs,  fing_alg)
+            fing_type = DNSMessage.__reverse_get(DNSMessage.sshfp_types, fing_type)
+            if fing_alg is None or fing_type is None:
+                print("Unknown SSHFP algorithm/type encountered")
                 return None
-            name_bytes = packet[i+1:i+count+1]
-            if any(byte > 127 for byte in name_bytes):
-                print("Non ascii character received. This is not supported yet")
-                return None
-            name_str += name_bytes.decode("ascii")
-            name_str += '.'
-            i+=count+1
+            rdata['ALGORITHM']   = fing_alg
+            rdata['FP_TYPE']     = fing_type
+            rdata['FINGERPRINT'] = str(data[start+2:start+2+fing_len].hex())
         else:
-            name_str = name_str[:-1]
-            return name_str
-    return None
+            print("Parsing not implemented for record type: " + str(qtype))
+            rdata = None
+        return rdata
 
-def skip_name(start, data):
-    i = start
-    while i < len(data):
-        if data[i] > 0:
-            if data[i] >= 0xc0:
-                return i + 2
-            i += 1
+    @staticmethod 
+    def __rdata_to_bytes(data):
+        rdata = b''
+        qtype = data['QTYPE']
+        if qtype == 'A':
+            if debug: print("Building A record")
+            size   = 4
+            add    = data['ADDRESS'].split('.')
+            rdata += size.to_bytes(2, byteorder='big')
+            for i in range(4):
+                rdata += int(add[i]).to_bytes(1, 'big')
+        elif qtype == 'NS':
+            if debug: print("Building NS record")
+            nsdname = DNSMessage.name_to_bytes(data['NSDNAME'])
+            rdata   += len(nsdname).to_bytes(2, byteorder='big')
+            rdata   += nsdname
+        elif qtype == 'CNAME':
+            if debug: print("Building CNAME record")
+            cname  = DNSMessage.name_to_bytes(data['CNAME'])
+            rdata += len(cname).to_bytes(2, byteorder='big')
+            rdata += cname
+        elif qtype == 'SOA':
+            if debug: print("Building SOA record")
+            mname   = DNSMessage.name_to_bytes(data['MNAME'])
+            rname   = DNSMessage.name_to_bytes(data['RNAME'])
+            size    = len(mname) + len(rname) + 4*5
+            serial  = data['SERIAL'].to_bytes(4, byteorder='big')
+            refresh = data['REFRESH'].to_bytes(4, byteorder='big')
+            retry   = data['RETRY'].to_bytes(4, byteorder='big')
+            expire  = data['EXPIRE'].to_bytes(4, byteorder='big')
+            minimum = data['MINIMUM'].to_bytes(4, byteorder='big')
+            rdata  += size.to_bytes(2, byteorder='big')
+            rdata  += mname + rname + serial + refresh + retry + expire + minimum
+        elif qtype == 'PTR':
+            if debug: print("Building PTR record")
+            ptrdname = DNSMessage.name_to_bytes(data['PTRDNAME'])
+            rdata += len(ptrdname).to_bytes(2, byteorder='big')
+            rdata += ptrdname
+        elif qtype == 'MX':
+            if debug: print("Building MX record")
+            pref = data['PREFERENCE'].to_bytes(2, byteorder='big')
+            exch = DNSMessage.name_to_bytes(data['EXCHANGE'])
+            size = len(exch) + 2
+            rdata  += size.to_bytes(2, byteorder='big')
+            rdata  += pref + exch
+        elif qtype == 'TXT':
+            if debug: print("Parsing TXT record")
+            txtdata = data['TXT-DATA']
+            tot_len = 0
+            tmp = str.encode('')
+            for entry in txtdata:
+                length  = len(entry).to_bytes(1, byteorder='big')
+                val     = str.encode(entry)
+                tmp     += length + val
+                tot_len += 1 + len(val)
+            rdata += tot_len.to_bytes(2, byteorder='big')
+            rdata += tmp
+        elif qtype == 'AAAA':
+            if debug: print("Building AAAA record")
+            size   = 16
+            rdata += size.to_bytes(2, byteorder='big')
+            aaaa   = data['ADDRESS']
+            for group in aaaa.split(':'): rdata += bytes.fromhex(group)
+        elif qtype == 'SRV':
+            if debug: print("Building SRV record")
+            priority = data['PRIORITY'].to_bytes(2, byteorder='big')
+            weight   = data['WEIGHT'].to_bytes(2, byteorder='big')
+            port     = data['PORT'].to_bytes(2, byteorder='big')
+            target   = DNSMessage.name_to_bytes(data['TARGET'])
+            size     = 6 + len(target)
+            rdata   += size.to_bytes(2, byteorder='big')
+            rdata   += priority + weight + port + target
+        elif qtype == 'SSHFP':
+            if debug: print("Building SSHFP record")
+            fing_alg  = DNSMessage.sshfp_algs.get(data['ALGORITHM'])
+            fing_type = DNSMessage.sshfp_types.get(data['FP_TYPE'])
+            if fing_alg is None or fing_type is None:
+                print("Unknown SSHFP algorithm/type encountered")
+                return rdata
+            fing_alg  = fing_alg.to_bytes(1, byteorder='big')
+            fing_type = fing_type.to_bytes(1, byteorder='big')
+            fing      = bytes.fromhex(data['FINGERPRINT'])
+            sshfp     = fing_alg + fing_type + fing
+            rdata    += len(sshfp).to_bytes(2, byteorder='big')
+            rdata    += sshfp
         else:
-            return i + 1
-    return -1
-
-def gen_question(qname, qtype, qclass):
-    query = gen_name(qname)
-    if query is None:
-        print("Invalid query name given")
-        return None
-    if qtype not in qtypes.keys():
-        print("Support not implemented for record type: " + str(qtype))
-        return None
-    if qclass not in qclasses.keys():
-        print("Support not implemented for query class type: " + str(qclass))
-        return None
-    query += qtypes[qtype].to_bytes(2, byteorder='big')
-    query += qclasses[qclass].to_bytes(2, byteorder='big')
-    return query
-
-def parse_question(start, data):
-    qname = parse_name(start, data)
-    if qname is None:
-        return {'ERROR':'Error parsing qname'}
-    pos = skip_name(start, data)
-    if pos < 0 or len(data) < pos+4:
-        return {'ERROR':'Malformed packet'}
-    qtype_int = int.from_bytes(data[pos:pos+2], 'big')
-    qtype = reverse_get(qtypes, qtype_int)
-    if qtype is None:
-        return {'ERROR':'Unsupported qtype: ' + str(qtype_int)}
-    qclass_int = int.from_bytes(data[pos+2:pos+4], 'big')
-    qclass = reverse_get(qclasses, qclass_int)
-    if qclass is None:
-        return {'ERROR':'Unsupported qclass: ' + str(qclass_int)}
-    return {'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass}
-
-def gen_trans_id():
-    return random.randrange(2**16-1)
-
-def parse_rdata(qtype, start, data):
-    rdata = {}
-    if qtype == qtypes['A']:
-        if debug: print("Parsing A record")
-        rdata['ADDRESS'] = str(data[start])+'.'+str(data[start+1])+'.'+str(data[start+2])+'.'+str(data[start+3])
-    elif qtype == qtypes['NS']:
-        if debug: print("Parsing NS record")
-        rdata['NSDNAME'] = parse_name(start, data)
-    elif qtype == qtypes['CNAME']:
-        if debug: print("Parsing CNAME record")
-        rdata['CNAME'] =  parse_name(start, data)
-    elif qtype == qtypes['SOA']:
-        if debug: print("Parsing SOA record")
-        rdata['MNAME']  = parse_name(start, data)
-        start = skip_name(start, data)
-        rdata['RNAME']  = parse_name(start, data)
-        start = skip_name(start, data)
-        rdata['SERIAL']  = int.from_bytes(data[start:start+4], 'big')
-        rdata['REFRESH'] = int.from_bytes(data[start+4:start+8], 'big')
-        rdata['RETRY']   = int.from_bytes(data[start+8:start+12], 'big')
-        rdata['EXPIRE']  = int.from_bytes(data[start+12:start+16], 'big')
-        rdata['MINIMUM'] = int.from_bytes(data[start+16:start+20], 'big')
-    elif qtype == qtypes['PTR']:
-        if debug: print("Parsing PTR record")
-        rdata['PTRDNAME'] = parse_name(start, data)
-    elif qtype == qtypes['MX']:
-        if debug: print("Parsing MX record")
-        rdata['PREFERENCE'] = int.from_bytes(data[start:start+2], 'big')
-        rdata['EXCHANGE']   = parse_name(start+2, data)
-    elif qtype == qtypes['TXT']:
-        if debug: print("Parsing TXT record")
-        length = int.from_bytes(data[start-2:start], 'big')
-        curr_size = 0
-        rdata['TXT-DATA'] = []
-        while curr_size < length and data[start+curr_size]:
-            size = data[start+curr_size]
-            rdata['TXT-DATA'].append(data[start+curr_size+1:start+curr_size+1+size].decode("ascii"))
-            curr_size += (1+size)
-    elif qtype == qtypes['AAAA']:
-        if debug: print("Parsing AAAA record")
-        AAAA = ''
-        for i in range(8): AAAA += (str(data[start+2*i:start+2*i+2].hex())+':')
-        rdata['ADDRESS'] = AAAA[:-1]
-    elif qtype == qtypes['SRV']:  #RFC 2782
-        if debug: print("Parsing SRV record")
-        rdata['PRIORITY'] = int.from_bytes(data[start:start+2], 'big')
-        rdata['WEIGHT']   = int.from_bytes(data[start+2:start+4], 'big')
-        rdata['PORT']     = int.from_bytes(data[start+4:start+6], 'big')
-        rdata['TARGET']   = parse_name(start+6, data)
-    elif qtype == qtypes['SSHFP']:
-        if debug: print("Parsing SSHFP record")
-        fing_alg  = int.from_bytes(data[start:start+1], 'big')
-        fing_type = int.from_bytes(data[start+1:start+2], 'big')
-        fing_len  = 0
-        if fing_type == 1: fing_len = 20
-        elif fing_type == 2: fing_len = 32
-        fing_alg  = reverse_get(sshfp_algs,  fing_alg)
-        fing_type = reverse_get(sshfp_types, fing_type)
-        if fing_alg is None or fing_type is None:
-            print("Unknown SSHFP algorithm/type encountered")
-            return None
-        rdata['ALGORITHM']   = fing_alg
-        rdata['FP_TYPE']     = fing_type
-        rdata['FINGERPRINT'] = str(data[start+2:start+2+fing_len].hex())
-    else:
-        print("Parsing not implemented for record type: " + str(qtype))
-        rdata = None
-    return rdata
-
-def gen_rdata(data):
-    rdata = b''
-    qtype = data['QTYPE']
-    if qtype == 'A':
-        if debug: print("Building A record")
-        size   = 4
-        add    = data['ADDRESS'].split('.')
-        rdata += size.to_bytes(2, byteorder='big')
-        for i in range(4):
-          rdata += int(add[i]).to_bytes(1, 'big')
-    elif qtype == 'NS':
-        if debug: print("Building NS record")
-        nsdname = gen_name(data['NSDNAME'])
-        rdata   += len(nsdname).to_bytes(2, byteorder='big')
-        rdata   += nsdname
-    elif qtype == 'CNAME':
-        if debug: print("Building CNAME record")
-        cname  = gen_name(data['CNAME'])
-        rdata += len(cname).to_bytes(2, byteorder='big')
-        rdata += cname
-    elif qtype == 'SOA':
-        if debug: print("Building SOA record")
-        mname   = gen_name(data['MNAME'])
-        rname   = gen_name(data['RNAME'])
-        size    = len(mname) + len(rname) + 4*5
-        serial  = data['SERIAL'].to_bytes(4, byteorder='big')
-        refresh = data['REFRESH'].to_bytes(4, byteorder='big')
-        retry   = data['RETRY'].to_bytes(4, byteorder='big')
-        expire  = data['EXPIRE'].to_bytes(4, byteorder='big')
-        minimum = data['MINIMUM'].to_bytes(4, byteorder='big')
-        rdata  += size.to_bytes(2, byteorder='big')
-        rdata  += mname + rname + serial + refresh + retry + expire + minimum
-    elif qtype == 'PTR':
-        if debug: print("Building PTR record")
-        ptrdname = gen_name(data['PTRDNAME'])
-        rdata += len(ptrdname).to_bytes(2, byteorder='big')
-        rdata += ptrdname
-    elif qtype == 'MX':
-        if debug: print("Building MX record")
-        pref = data['PREFERENCE'].to_bytes(2, byteorder='big')
-        exch = gen_name(data['EXCHANGE'])
-        size = len(exch) + 2
-        rdata  += size.to_bytes(2, byteorder='big')
-        rdata  += pref + exch
-    elif qtype == 'TXT':
-        if debug: print("Parsing TXT record")
-        txtdata = data['TXT-DATA']
-        tot_len = 0
-        tmp = str.encode('')
-        for entry in txtdata:
-            length  = len(entry).to_bytes(1, byteorder='big')
-            val     = str.encode(entry)
-            tmp     += length + val
-            tot_len += 1 + len(val)
-        rdata += tot_len.to_bytes(2, byteorder='big')
-        rdata += tmp
-    elif qtype == 'AAAA':
-        if debug: print("Building AAAA record")
-        size   = 16
-        rdata += size.to_bytes(2, byteorder='big')
-        aaaa   = data['ADDRESS']
-        for group in aaaa.split(':'): rdata += bytes.fromhex(group)
-    elif qtype == 'SRV':
-        if debug: print("Building SRV record")
-        priority = data['PRIORITY'].to_bytes(2, byteorder='big')
-        weight   = data['WEIGHT'].to_bytes(2, byteorder='big')
-        port     = data['PORT'].to_bytes(2, byteorder='big')
-        target   = gen_name(data['TARGET'])
-        size     = 6 + len(target)
-        rdata   += size.to_bytes(2, byteorder='big')
-        rdata   += priority + weight + port + target
-    elif qtype == 'SSHFP':
-        if debug: print("Building SSHFP record")
-        fing_alg  = sshfp_algs.get(data['ALGORITHM'])
-        fing_type = sshfp_types.get(data['FP_TYPE'])
-        if fing_alg is None or fing_type is None:
-            print("Unknown SSHFP algorithm/type encountered")
-            return rdata
-        fing_alg  = fing_alg.to_bytes(1, byteorder='big')
-        fing_type = fing_type.to_bytes(1, byteorder='big')
-        fing      = bytes.fromhex(data['FINGERPRINT'])
-        sshfp     = fing_alg + fing_type + fing
-        rdata    += len(sshfp).to_bytes(2, byteorder='big')
-        rdata    += sshfp
-    else:
-        print("Writing not implmented for record type: " + str(qtype))
-        print(data)
-    return rdata
-
-def gen_RRs(data):
-    response = ''
-    if data['QDCount']:
-      qname  = data['Question'][0]['QNAME']
-      qtype  = data['Question'][0]['QTYPE']
-      qclass = data['Question'][0]['QCLASS']
-      response = gen_name(qname)
-      if response is None:
-          return None
-      response += qtypes[qtype].to_bytes(2, byteorder='big')
-      response += qclasses[qclass].to_bytes(2, byteorder='big')
-    for section in ['Answer', 'Authority', 'Additional']:
-        count = 0
-        if section == 'Answer' and data['ANCount']:
-            count = data['ANCount']
-        elif section == 'Authority' and data['NSCount']:
-            count = data['NSCount']
-        elif section == 'Additional' and data['ARCount']:
-            count = data['ARCount']
-        for i in range(count):
-            qname  = data[section][i]['QNAME']
-            qtype  = data[section][i]['QTYPE']
-            qclass = data[section][i]['QCLASS']
-            ttl    = data[section][i]['TTL']
-
-            tmp_res  = gen_name(qname)
+            print("Writing not implmented for record type: " + str(qtype))
+            print(data)
+        return rdata
+    
+    # Writes the RR data to the packet
+    # Call rdata_to_bytes for each record
+    def __RRs_to_bytes(self):
+        response = b''
+        if self.QDCount:
+            qname  = self.Question[0]['QNAME']
+            qtype  = self.Question[0]['QTYPE']
+            qclass = self.Question[0]['QCLASS']
+            response = DNSMessage.name_to_bytes(qname)
             if response is None:
                 return None
-            tmp_res += qtypes[qtype].to_bytes(2, byteorder='big')
-            tmp_res += qclasses[qclass].to_bytes(2, byteorder='big')
-            tmp_res += ttl.to_bytes(4, byteorder='big')
-            rdata    = gen_rdata(data[section][i])
-            if len(rdata) > 0 :  #Type implemented
-                tmp_res  += rdata
-                response += tmp_res
-    return response
-
-def parse_packet(packet):
-    ret = {}
-    pkt_len = len(packet)
+            response += DNSMessage.qtypes[qtype].to_bytes(2, byteorder='big')
+            response += DNSMessage.qclasses[qclass].to_bytes(2, byteorder='big')
+        for section in ['Answer', 'Authority', 'Additional']:
+            count = 0
+            if section == 'Answer' and self.ANCount:
+                count = self.ANCount
+                data_section = self.Answer
+            elif section == 'Authority' and self.NSCount:
+                count = self.NSCount
+                data_section = self.Authority
+            elif section == 'Additional' and self.ARCount:
+                count = self.ARCount
+                data_section = self.Additional
+            for i in range(count):
+                qname  = data_section[i]['QNAME']
+                qtype  = data_section[i]['QTYPE']
+                qclass = data_section[i]['QCLASS']
+                ttl    = data_section[i]['TTL']
     
-    # parse header
-    if pkt_len < 12:
-        print("Packet length too short.")
-        ret['ERROR'] = "Packet length too short"
-        return ret
-    header = packet[:12]
-    trans_id = int.from_bytes(header[:2], 'big')
-    flags    = int.from_bytes(header[2:4], 'big')
-    QDCount  = int.from_bytes(header[4:6], 'big')    #Number of questions
-    ANCount  = int.from_bytes(header[6:8], 'big')    #Number of answers
-    NSCount  = int.from_bytes(header[8:10], 'big')   #Number of NS RRs
-    ARCount  = int.from_bytes(header[10:12], 'big')  #Number of add RRS
+                tmp_res = DNSMessage.name_to_bytes(qname)
+                if response is None:
+                    return None
+                tmp_res += DNSMessage.qtypes[qtype].to_bytes(2, byteorder='big')
+                tmp_res += DNSMessage.qclasses[qclass].to_bytes(2, byteorder='big')
+                tmp_res += ttl.to_bytes(4, byteorder='big')
+                rdata    = DNSMessage.__rdata_to_bytes(data_section[i])
+                if len(rdata) > 0 :  #Type implemented
+                    tmp_res  += rdata
+                    response += tmp_res
+        return response
+   
+    def copy_RRs(self, source, sections=['Question', 'Answer', 'Authority', 'Additional']):
+        for section in sections:
+            if section == 'Question':
+                self.QDCount = source.QDCount
+                self.Question = copy.deepcopy(source.Question)
+            elif section == 'Answer':
+                self.ANCount = source.ANCount
+                self.Answer = copy.deepcopy(source.Answer)
+            elif section == 'Authority':
+                self.NSCount = source.NSCount
+                self.Authority = copy.deepcopy(source.Authority)
+            elif section == 'Additional':
+                self.ARCount = source.ARCount
+                self.Additional = copy.deepcopy(source.Additional)
+            
+    def __parse_packet(self, packet):
+        pkt_len = len(packet)
+        
+        # parse header
+        if pkt_len < 12:
+            print("Packet length too short.")
+            self.ERROR = "Packet length too short"
+            return
 
-    ret['TXID'] = trans_id
+        header = packet[:12]
+        self.__bytes_to_header(header)
+    
+        RCode = self.FLAG["RCode"]
+        if RCode not in DNSMessage.rcodes:
+            print("RCode not implemented.")
+            self.ERROR = "RCode not implemented"
+            return
+    
+        pos = 12
+        if(self.QDCount):
+            if debug: print("Packet query section. Parsing...")
+            if self.QDCount > 1:
+                print("QDCount > 1 not supported. Disregarding additional queries")
+                self.QDCount = 1
+            self.__bytes_to_question(pos, packet)
+            if self.ERROR:
+                # TODO: Should we set QDCount to 0?
+                return
+            pos = DNSMessage.skip_name(pos, packet)+4
+        for section in ('Answer', 'Authority', "Additional"):
+            if section == 'Answer':
+                count = self.ANCount
+                entries = self.Answer
+            elif section == "Authority":
+                count = self.NSCount
+                entries = self.Authority
+            elif section == "Additional":
+                count = self.ARCount
+                entries = self.Additional
+            if count and debug: print("Response contains " + section + " section. Parsing...")
+            if pkt_len < pos + count*10:  # Sanity check so we don't loop a crazy number of times on a malformed packet
+                self.ERROR = "Malformed packet"  # TODO: revisit this when we wire up truncation
+                return
+            for _ in range(count):
+                qname = DNSMessage.bytes_to_name(pos, packet)
+                pos   = DNSMessage.skip_name(pos, packet)
+                if pkt_len < pos+10:
+                    self.ERROR = "Malformed packet"
+                    return
+                qtype    = int.from_bytes(packet[pos:pos+2], 'big')
+                qclass   = int.from_bytes(packet[pos+2:pos+4], 'big')
+                ttl      = int.from_bytes(packet[pos+4:pos+8], 'big')
+                RDlength = int.from_bytes(packet[pos+8:pos+10], 'big')
+                pos += 10
+                if pkt_len < pos + RDlength:
+                    self.ERROR = "Malformed packet"
+                    return
+                RData = DNSMessage.__bytes_to_rdata(qtype, pos, packet)
+                if RData is None:  # Unable to parse rdata record. Decrement appropriate count
+                    if   section == 'Answer':     self.ANCount -= 1
+                    elif section == 'Authority':  self.NSCount -= 1
+                    elif section == 'Additional': self.ARCount -= 1
+                else:
+                    RData['QNAME']  = qname
+                    RData['QTYPE']  = DNSMessage.__reverse_get(DNSMessage.qtypes, qtype)
+                    RData['QCLASS'] = DNSMessage.__reverse_get(DNSMessage.qclasses, qclass)
+                    RData['TTL']    = ttl
+                    entries.append(RData)
+                pos += RDlength
+        return
 
-    flags = parse_flags(flags)
-    ret['FLAG'] = flags
-
-    RCode = flags["RCode"]
-    if RCode not in rcodes:
-        print("RCode not implemented.")
-        ret['ERROR'] = "RCode not implemented"
-        return ret
-
-    ret['RCODE']   = rcodes[RCode]
-    ret['QDCount'] = QDCount
-    ret['ANCount'] = ANCount
-    ret['NSCount'] = NSCount
-    ret['ARCount'] = ARCount
-
-    pos = 12
-    ret['Question'] = []
-    if(QDCount):
-        if debug: print("Packet query section. Parsing...")
-        if QDCount > 1:
-            print("QDCount > 1 not supported. Disregarding additional queries")
-            ret['QDCount'] = 1
-        qdata = parse_question(pos, packet)
-        if 'ERROR' in qdata:
-            ret['ERROR'] = qdata['ERROR']
-            # TODO: Should we set QDCount to 0?
-            return ret
-        pos = skip_name(pos, packet)+4
-        # Probably not going to support multiple queries, but storing in list anyway
-        ret['Question'] = []
-        ret['Question'].append(qdata)
-    for section in ('Answer', 'Authority', "Additional"):
-        if section == 'Answer':
-            count = ANCount
-        elif section == "Authority":
-            count = NSCount
-        elif section == "Additional":
-            count = ARCount
-        if count and debug: print("Response contains " + section + " section. Parsing...")
-        ret[section] = []
-        if pkt_len < pos + count*10:  # Sanity check so we don't loop a crazy number of times on a malformed packet
-            ret['ERROR'] = "Malformed packet"  # TODO: revisit this when we wire up truncation
-            return ret
-        for i in range(count):
-            qname = parse_name(pos, packet)
-            pos   = skip_name(pos, packet)
-            if pkt_len < pos+10:
-                ret['ERROR'] = "Malformed packet"
-                return ret
-            qtype    = int.from_bytes(packet[pos:pos+2], 'big')
-            qclass   = int.from_bytes(packet[pos+2:pos+4], 'big')
-            ttl      = int.from_bytes(packet[pos+4:pos+8], 'big')
-            RDlength = int.from_bytes(packet[pos+8:pos+10], 'big')
-            pos += 10
-            if pkt_len < pos + RDlength:
-                ret['ERROR'] = "Malformed packet"
-                return ret
-            RData = parse_rdata(qtype, pos, packet)
-            if RData is None:  # Unable to parse rdata record. Decrement appropriate count
-                if   section == 'Answer':     ret['ANCount'] -= 1
-                elif section == 'Authority':  ret['NSCount'] -= 1
-                elif section == 'Additional': ret['ARCount'] -= 1
-            else:
-                RData['QNAME']  = qname
-                RData['QTYPE']  = reverse_get(qtypes, qtype)
-                RData['QCLASS'] = reverse_get(qclasses, qclass)
-                RData['TTL']    = ttl
-                ret[section].append(RData)
-            pos += RDlength
-    return ret
+    # Reverse map function for 1:1 dictionaries
+    @staticmethod
+    def __reverse_get(dictionary, value):
+        rev = {v: k for k, v in dictionary.items()}
+        return rev.get(value)
 
 
 ######DEFAULT SETTINGS######
@@ -573,7 +665,7 @@ def main():
 
     MIN_PYTHON = (3, 5)
     if sys.version_info < MIN_PYTHON:
-      sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+        sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
 
     parser = argparse.ArgumentParser(description='Pystub DNS stub resolver')
     parser.add_argument('-C', dest='config_file', help='Configuration file location')
@@ -668,60 +760,59 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pa
 
 def process_query(request):
     if debug: print("Received client query")
-    parsed = parse_packet(request)
-    if 'ERROR' in parsed:
-        print('ERROR: '+parsed['ERROR'])
-        if 'TXID' not in parsed:
+    request = DNSMessage(request)
+    if request.ERROR:
+        print('ERROR: '+request.ERROR)
+        if request.TXID == -1:
             return None  # Drop packet since we can't even reply
-        cltxid = parsed['TXID']
-        RD = 0
-        if 'RD' in parsed['FLAG']:
-            RD = parsed['FLAG']['RD']
-        if parsed['ERROR'] == "Unsupported qtype":
-            flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
-        elif parsed['ERROR'] == "Unsupported qclass":
-            flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
-        elif parsed['ERROR'] == "Malformed packet":
-            flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
-        elif parsed['ERROR'] == "Error parsing qname":
-            flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
-        elif parsed['ERROR'] == "RCode not implemented":
-            flags  = gen_flags(1, RD=RD, RA=1, RCode=4)
+        cltxid = request.TXID
+        RD = request.FLAG['RD']
+        response = DNSMessage()
+        if request.ERROR == "Unsupported qtype":
+            response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
+        elif request.ERROR == "Unsupported qclass":
+            response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
+        elif request.ERROR == "Malformed packet":
+            response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
+        elif request.ERROR == "Error parsing qname":
+            response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
+        elif request.ERROR == "RCode not implemented":
+            response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
         else:  # Send back server failure if we don't have a better code
-            flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
-        return gen_header(cltxid, flags, 0, 0, 0, 0)
-    cltxid = parsed['TXID']
-    RD     = parsed['FLAG']['RD']
-    if len(parsed['Question']) == 0:
-        print("Empty query")
-        flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
-        return gen_header(cltxid, flags, 0, 0, 0, 0)
-    qname  = parsed['Question'][0]['QNAME']
-    qtype  = parsed['Question'][0]['QTYPE']
-    qclass = parsed['Question'][0]['QCLASS']
+            response.set_flags(QR=1, RD=RD, RA=1, RCode=2)
+        response.set_header(TXID=cltxid, QDCount=0, ANCount=0, NSCount=0, ARCount=0)
+        return response.to_bytes()
+    cltxid = request.TXID
+    RD     = request.FLAG['RD']
+    if len(request.Question) == 0:
+        print("Received empty query")
+        response = DNSMessage()
+        response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
+        response.set_header(TXID=cltxid)
+        return response.to_bytes()
+    qname  = request.Question[0]['QNAME']
+    qtype  = request.Question[0]['QTYPE']
+    qclass = request.Question[0]['QCLASS']
     if any(domain in qname for domain in blacklist) and qtype in ['A', 'AAAA']:
         print("Blocked: " + qname)
-        flags  = gen_flags(1, RD=RD, RA=1)
-        header = gen_header(cltxid, flags, 1, 1, 0, 0)
-        parsed['ANCount'] = 1
+        response = DNSMessage()
+        response.set_flags(QR=1, RD=RD, RA=1)
+        response.set_header(TXID=cltxid, QDCount=1, ANCount=1)
+        response.copy_RRs(request, sections=['Question'])
         loopback = '127.0.0.1' if qtype == 'A' else '0000:0000:0000:0000:0000:0000:0000:0001'
-        parsed['Answer'] = [{'ADDRESS': loopback, 'QNAME': qname, 'QTYPE': qtype, 'QCLASS': qclass, 'TTL': 3600}]
-        response = gen_RRs(parsed)
-        packet = gen_packet(header, response)
-        if debug: print("Blocked domain\n\n")
-        return packet
+        response.Answer = [{'ADDRESS': loopback, 'QNAME': qname, 'QTYPE': qtype, 'QCLASS': qclass, 'TTL': 3600}]
+        if debug: print("Blocked: " + qname + "\n")
+        return response.to_bytes()
     if debug: print("Client query parsed\n")
 
     # Build and send query upstream
     if debug: print("Generating upstream query")
-    flags  = gen_flags(0, RD=RD)
-    header = gen_header(gen_trans_id(), flags, 1, 0, 0, 0)
-    query  = gen_question(qname, qtype, qclass)
-    if query is None:
-        print("Error generating query.")
-        flags  = gen_flags(1, RD=RD, RCode=2)
-        return gen_header(cltxid, flags, 0, 0, 0, 0)
-    packet = gen_packet(header, query)
+    up_request = DNSMessage()
+    up_request.set_flags(QR=0, RD=RD)
+    up_request.gen_txid()
+    up_request.set_header(QDCount=1)
+    up_request.set_question(qname, qtype, qclass)
+    packet = up_request.to_bytes()
     # TODO: Consider making this block a static fuction of upstream
     conn = None
     attempts = 0
@@ -731,8 +822,10 @@ def process_query(request):
         attempts += 1
     if conn is None:
         print("Error connecting upstream.")
-        flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
-        return gen_header(cltxid, flags, 0, 0, 0, 0)
+        response = DNSMessage()
+        response.set_flags(QR=1, RD=RD, RA=1, RCode=2)
+        response.set_header(TXID=cltxid)
+        return response.to_bytes()
     up.sendall(conn, packet)
     if debug: print("Sent upstream query\n")
 
@@ -740,30 +833,23 @@ def process_query(request):
     packet = up.recvall(conn)
     up.close(conn)
     if debug: print("Received upstream response")
-    parsed = parse_packet(packet)
-    if 'ERROR' in parsed:
-        print('ERROR: '+parsed['ERROR'])
-        flags  = gen_flags(1, RD=RD, RA=1, RCode=1)
-        return gen_header(cltxid, flags, 0, 0, 0, 0)
-    ANCount = parsed['ANCount']
-    NSCount = parsed['NSCount']
-    ARCount = parsed['ARCount']
-    RCode   = parsed['RCODE']
+    up_response = DNSMessage(packet)
+    if up_response.ERROR:
+        print('ERROR: '+up_response.ERROR)
+        response = DNSMessage()
+        response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
+        response.set_header(TXID=cltxid)
+        return response.to_bytes()
     if debug: print("Upstream response parsed\n")
 
     # Build and send client response
     if debug: print("Generating client response")
-    RCode    = reverse_get(rcodes, RCode)
-    flags    = gen_flags(1, RD=RD, RA=1, RCode=RCode)
-    header   = gen_header(cltxid, flags, 1, ANCount, NSCount, ARCount)
-    response = gen_RRs(parsed)
-    if response is None:
-        print("Error generating client response.")
-        flags  = gen_flags(1, RD=RD, RA=1, RCode=2)
-        return gen_header(cltxid, flags, 0, 0, 0, 0)
-    packet = gen_packet(header, response)
+    response = DNSMessage()
+    response.set_flags(QR=1, RD=RD, RA=1)
+    response.set_header(TXID=cltxid)
+    response.copy_RRs(up_response)
     if debug: print("Sent client response\n\n")
-    return packet
+    return response.to_bytes()
 
 
 if __name__ == "__main__":
