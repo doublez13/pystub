@@ -236,6 +236,7 @@ class DNSMessage:
         AD      = (flags >>  5) & 2**1-1  #RFC 4035
         CD      = (flags >>  4) & 2**1-1  #RFC 4035
         RCode   = (flags >>  0) & 2**4-1
+        #TODO: Validity check needed
         self.FLAG = {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
     def set_flags(self, QR=None, OpCode=None, AA=None, TC=None, RD=None, RA=None, Z=None, AD=None, CD=None, RCode=None):
@@ -607,9 +608,10 @@ class DNSMessage:
             if self.QDCount > 1:
                 print("QDCount > 1 not supported. Disregarding additional queries")
                 self.QDCount = 1
-                # We're not jumping over the other queries, corrupting the other sections?
+                # TODO: We're not jumping over the other queries, corrupting the other sections?
             self.__bytes_to_question(pos, packet)
             if self.ERROR: return
+            # Note we don't need to error check this as __bytes_to_question already does
             pos = DNSMessage.skip_name(pos, packet)+4
         for section in ('Answer', 'Authority', "Additional"):
             if section == 'Answer':
@@ -655,6 +657,7 @@ class DNSMessage:
                     RData['QTYPE']  = DNSMessage.__reverse_get(DNSMessage.qtypes, qtype)
                     RData['QCLASS'] = DNSMessage.__reverse_get(DNSMessage.qclasses, qclass)
                     RData['TTL']    = ttl
+                    #TODO: We need to check if any of the RData fields are set to NONE
                     entries.append(RData)
                 pos += RDlength
         return
@@ -806,7 +809,14 @@ def process_query(request):
         response.set_header(TXID=cltxid, QDCount=0, ANCount=0, NSCount=0, ARCount=0)
         return response.to_bytes()
     cltxid = request.TXID
-    RD = request.FLAG['RD']
+    rflags = request.FLAG
+    RD = rflags['RD']
+    if rflags['QR'] or rflags['OpCode'] or rflags['AA'] or rflags['RA'] or rflags['Z'] or rflags['RCode']:
+        print("Invalid client request flags")
+        response = DNSMessage()
+        response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
+        response.set_header(TXID=cltxid)
+        return response.to_bytes()
     if len(request.Question) == 0:
         print("Received empty query")
         response = DNSMessage()
