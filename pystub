@@ -257,16 +257,26 @@ class DNSMessage:
         self.FLAG = {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
     def set_flags(self, QR=None, OpCode=None, AA=None, TC=None, RD=None, RA=None, Z=None, AD=None, CD=None, RCode=None):
-        if QR: self.FLAG["QR"] = QR
-        if OpCode: self.FLAG["OpCode"] = OpCode
-        if AA: self.FLAG["AA"] = AA
-        if TC: self.FLAG["TC"] = TC
-        if RD: self.FLAG["RD"] = RD
-        if RA: self.FLAG["RA"] = RA
-        if Z:  self.FLAG["Z"]  = Z
-        if AD: self.FLAG["AD"] = AD
-        if CD: self.FLAG["CD"] = CD
-        if RCode: self.FLAG["RCode"] = RCode
+        if QR and type(QR) is int and QR in {0,1}:
+            self.FLAG["QR"] = QR
+        if OpCode and type(OpCode) is int and OpCode in DNSMessage.opcodes:
+            self.FLAG["OpCode"] = OpCode
+        if AA and type(AA) is int and AA in {0,1}:
+            self.FLAG["AA"] = AA
+        if TC and type(TC) is int and TC in {0,1}:
+            self.FLAG["TC"] = TC
+        if RD and type(RD) is int and RD in {0,1}:
+            self.FLAG["RD"] = RD
+        if RA and type(RA) is int and RA in {0,1}:
+            self.FLAG["RA"] = RA
+        if Z and type(Z) is int and Z == 0:
+            self.FLAG["Z"]  = Z
+        if AD and type(AD) is int and AD in {0,1}:
+            self.FLAG["AD"] = AD
+        if CD and type(CD) is int and CD in {0,1}:
+            self.FLAG["CD"] = CD
+        if RCode and type(RCode) is int and RCode in DNSMessage.rcodes:
+            self.FLAG["RCode"] = RCode
 
 
     def __question_to_bytes(self):
