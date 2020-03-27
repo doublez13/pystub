@@ -182,11 +182,21 @@ class DNSMessage:
 
 
     def __header_to_bytes(self):
+        if self.TXID < 0:
+            return None #TXID has not been initialized
         trans_id = self.TXID.to_bytes(2, 'big')
         flags    = self.__flags_to_bytes()
+        if len(self.Question) != self.QDCount:
+            return None
         QDCount  = self.QDCount.to_bytes(2, 'big')
+        if len(self.Answer) != self.ANCount:
+            return None
         ANCount  = self.ANCount.to_bytes(2, 'big')
+        if len(self.Authority) != self.NSCount:
+            return None
         NSCount  = self.NSCount.to_bytes(2, 'big')
+        if len(self.Additional) != self.ARCount:
+            return None
         ARCount  = self.ARCount.to_bytes(2, 'big')
         return trans_id + flags + QDCount + ANCount + NSCount + ARCount
 
