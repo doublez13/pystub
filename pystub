@@ -785,19 +785,18 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         self.request.settimeout(6)
         try:
-            packet = self.request.recv(4096)
+            enc_len = self.request.recv(2)
+            enc_len = int.from_bytes(enc_len, 'big')
         except Exception:
             return
-        enc_len = int.from_bytes(packet[:2], 'big')
-        pkt_len = len(packet) - 2
-        packet = packet[2:]
+        pkt_len = 0
+        packet = b''
         while pkt_len < enc_len:
             try:
                 packet += self.request.recv(enc_len - pkt_len)
             except Exception:
                 return
             pkt_len += len(packet)
-
         packet = process_query(packet)
         if packet is None:
             return  # No response to send back to client
