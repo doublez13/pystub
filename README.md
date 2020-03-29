@@ -32,7 +32,7 @@ Support for the following record types has been implemented with more to come so
 - A
 - NS
 - CNAME
-- SO
+- SOA
 - PTR
 - MX
 - TXT
