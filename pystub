@@ -701,6 +701,7 @@ class DNSMessage:
 
 ######DEFAULT SETTINGS######
 deflt_cnfg_file = '/etc/pystub.yml'
+verbose = 0
 debug = 0
 upstrm_cnfgs = [
                 {
@@ -715,6 +716,7 @@ blacklist = []
 
 
 def main():
+    global verbose
     global debug
     global upstrm_cnfgs
     global blacklist
@@ -726,9 +728,11 @@ def main():
     parser = argparse.ArgumentParser(description='Pystub DNS stub resolver')
     parser.add_argument('-C', dest='config_file', help='Configuration file location')
     parser.add_argument('-v', dest='verbose', action='store_true', help='Verbose output')
+    parser.add_argument('-vv', dest='debug', action='store_true', help='Debug output')
     args = parser.parse_args()
     config_file = args.config_file
-    debug       = args.verbose
+    verbose     = args.verbose or args.debug
+    debug       = args.debug
 
     #Parse config
     if config_file is None:
@@ -855,14 +859,13 @@ def process_query(request):
     qtype  = request.Question[0]['QTYPE']
     qclass = request.Question[0]['QCLASS']
     if any(domain in qname for domain in blacklist) and qtype in ['A', 'AAAA']:
-        print("Blocked: " + qname)
+        if verbose: print("Blocked: " + qname)
         response = DNSMessage()
         response.set_flags(QR=1, RD=RD, RA=1)
         response.set_header(TXID=cltxid, QDCount=1, ANCount=1)
         response.copy_RRs(request, sections=['Question'])
         loopback = '127.0.0.1' if qtype == 'A' else '0000:0000:0000:0000:0000:0000:0000:0001'
         response.Answer = [{'ADDRESS': loopback, 'QNAME': qname, 'QTYPE': qtype, 'QCLASS': qclass, 'TTL': 3600}]
-        if debug: print("Blocked: " + qname + "\n")
         return response.to_bytes()
     if debug: print("Client query parsed\n")
 
