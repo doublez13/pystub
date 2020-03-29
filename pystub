@@ -210,15 +210,15 @@ class DNSMessage:
         self.__bytes_to_flags(flags)
   
     def set_header(self, TXID=None, QDCount=None, ANCount=None, NSCount=None, ARCount=None):
-        if TXID and type(TXID) is int and TXID > 0:
+        if type(TXID) is int and TXID > 0:
             self.TXID = TXID
-        if QDCount and type(QDCount) is int and QDCount > 0:
+        if type(QDCount) is int and QDCount > 0:
             self.QDCount = QDCount
-        if ANCount and type(ANCount) is int and ANCount > 0:
+        if type(ANCount) is int and ANCount > 0:
             self.ANCount = ANCount
-        if NSCount and type(NSCount) is int and NSCount > 0:
+        if type(NSCount) is int and NSCount > 0:
             self.NSCount = NSCount
-        if ARCount and type(ARCount) is int and ARCount > 0:
+        if type(ARCount) is int and ARCount > 0:
             self.ARCount = ARCount
 
 
@@ -257,25 +257,23 @@ class DNSMessage:
         self.FLAG = {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
     def set_flags(self, QR=None, OpCode=None, AA=None, TC=None, RD=None, RA=None, Z=None, AD=None, CD=None, RCode=None):
-        if QR and type(QR) is int and QR in {0,1}:
+        if type(QR) is int and QR in {0,1}:
             self.FLAG["QR"] = QR
-        if OpCode and type(OpCode) is int and OpCode in DNSMessage.opcodes:
+        if type(OpCode) is int and OpCode in DNSMessage.opcodes:
             self.FLAG["OpCode"] = OpCode
-        if AA and type(AA) is int and AA in {0,1}:
+        if type(AA) is int and AA in {0,1}:
             self.FLAG["AA"] = AA
-        if TC and type(TC) is int and TC in {0,1}:
+        if type(TC) is int and TC in {0,1}:
             self.FLAG["TC"] = TC
-        if RD and type(RD) is int and RD in {0,1}:
+        if type(RD) is int and RD in {0,1}:
             self.FLAG["RD"] = RD
-        if RA and type(RA) is int and RA in {0,1}:
+        if type(RA) is int and RA in {0,1}:
             self.FLAG["RA"] = RA
-        if Z and type(Z) is int and Z == 0:
-            self.FLAG["Z"]  = Z
-        if AD and type(AD) is int and AD in {0,1}:
+        if type(AD) is int and AD in {0,1}:
             self.FLAG["AD"] = AD
-        if CD and type(CD) is int and CD in {0,1}:
+        if type(CD) is int and CD in {0,1}:
             self.FLAG["CD"] = CD
-        if RCode and type(RCode) is int and RCode in DNSMessage.rcodes:
+        if type(RCode) is int and RCode in DNSMessage.rcodes:
             self.FLAG["RCode"] = RCode
 
 
@@ -317,10 +315,8 @@ class DNSMessage:
 
     def set_question(self, qname, qtype, qclass):
         if qtype not in DNSMessage.qtypes.keys():
-            print("Support not implemented for record type: " + str(qtype))
             self.ERROR = "Support not implemented for record type: " + str(qtype)
         if qclass not in DNSMessage.qclasses.keys():
-            print("Support not implemented for query class type: " + str(qclass))
             self.ERROR ="Support not implemented for query class type: " + str(qclass)
         self.Question.append({'QNAME':qname, "QTYPE":qtype, 'QCLASS':qclass})
 
@@ -509,7 +505,7 @@ class DNSMessage:
             rdata  += size.to_bytes(2, byteorder='big')
             rdata  += pref + exch
         elif qtype == 'TXT':
-            if debug: print("Parsing TXT record")
+            if debug: print("Building TXT record")
             txtdata = data['TXT-DATA']
             tot_len = 0
             tmp = str.encode('')
@@ -616,16 +612,14 @@ class DNSMessage:
         
         # parse header
         if pkt_len < 12:
-            print("Packet length too short.")
-            self.ERROR = "Packet length too short"
+            self.ERROR = "Packet length too short: " + str(pkt_len) + " bytes"
             return
 
         header = packet[:12]
         self.__bytes_to_header(header)
     
         if self.FLAG["RCode"] not in DNSMessage.rcodes:
-            print("RCode not implemented.")
-            self.ERROR = "RCode not implemented"
+            self.ERROR = "RCode not implemented: " + str(self.FLAG["RCode"])
             return
 
         if self.FLAG["OpCode"] not in DNSMessage.opcodes:
@@ -635,7 +629,6 @@ class DNSMessage:
 
         #Sanity check the client flags on a query
         if self.FLAG['QR'] == 0 and (self.FLAG['OpCode'] or self.FLAG['AA'] or self.FLAG['RA'] or self.FLAG['Z'] or self.FLAG['RCode']):
-            print("Invalid client request flags")
             self.ERROR = "Invalid client request flags"
             return
     
