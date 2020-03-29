@@ -82,12 +82,12 @@ class upstream:
         if self.tcp:
             conn.settimeout(6)
             try:
-                packet = conn.recv(4096)
+                enc_len = conn.recv(2)
+                enc_len = int.from_bytes(enc_len, 'big')
             except Exception:
                 return ""
-            enc_len = int.from_bytes(packet[:2], 'big')
-            pkt_len = len(packet) - 2
-            packet = packet[2:]
+            pkt_len = 0
+            packet = b''
             while pkt_len < enc_len:
                 try:
                     packet += conn.recv(enc_len - pkt_len)
