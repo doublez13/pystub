@@ -623,8 +623,7 @@ class DNSMessage:
             return
 
         if self.FLAG["OpCode"] not in DNSMessage.opcodes:
-            print("OpCode not implemented.")
-            self.ERROR = "OpCode not implemented"
+            self.ERROR = "OpCode not implemented: " + str(self.FLAG["OpCode"])
             return
 
         #Sanity check the client flags on a query
@@ -828,17 +827,17 @@ def process_query(request):
         cltxid = request.TXID
         RD = request.FLAG['RD']
         response = DNSMessage()
-        if request.ERROR == "Unsupported qtype":
+        if "Unsupported qtype" in request.ERROR:
             response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
-        elif request.ERROR == "Unsupported qclass":
+        elif "Unsupported qclass" in request.ERROR:
             response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
         elif request.ERROR == "Malformed packet":
             response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
         elif request.ERROR == "Error parsing qname":
             response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
-        elif request.ERROR == "RCode not implemented":
+        elif "RCode not implemented" in request.ERROR:
             response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
-        elif request.ERROR == "OpCode not implemented":
+        elif "OpCode not implemented" in request.ERROR:
             response.set_flags(QR=1, RD=RD, RA=1, RCode=4)
         elif request.ERROR == "Invalid client request flags":
             response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
