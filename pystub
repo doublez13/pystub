@@ -27,7 +27,7 @@ import yaml
 
 class upstream:
     upstreams = []
-    enabled   = []
+    lock = threading.Lock()
 
     def __init__(self, addr, tls_name, port, tcp):
         # TODO: verify valid input
@@ -36,41 +36,51 @@ class upstream:
         self.port     = port
         self.tcp      = 1 if len(tls_name) > 0 else tcp
         self.tls      = 1 if len(tls_name) > 0 else 0
+        self.enabled  = 0
+        upstream.lock.acquire()
         upstream.upstreams.append(self)
+        upstream.lock.release()
 
     @staticmethod
     def get_connection():
-        conn = None
-        up = None
-        while len(upstream.enabled): #TODO: parallel?
+        while True:
+            conn = None
+            up = None
             up = upstream.get_server()
+            if up is None: break
             conn = up.connect()
             if conn: break
-            #TODO: lock
             up.disable()
         return up, conn
 
     @staticmethod
     def get_server():
-        return random.choice(upstream.enabled)
+        tmp = list(range(len(upstream.upstreams)))
+        random.shuffle(tmp)
+        for i in tmp:
+            if upstream.upstreams[i].enabled:
+                return upstream.upstreams[i]
+        return None
 
     @staticmethod
     def check_upstreams():
-        tmp = []
         for up in upstream.upstreams:
             conn = up.connect()
             if conn:
                 up.close(conn)
                 up.enable()
-                tmp.append(up)
-        #TODO: lock
-        upstream.enabled = tmp.copy()
+            else:
+                up.disable()
 
     def enable(self):
-        upstream.enabled.append(self)
+        upstream.lock.acquire()
+        self.enabled = 1
+        upstream.lock.release()
 
     def disable(self):
-        upstream.enabled.remove(self)
+        upstream.lock.acquire()
+        self.enabled = 0
+        upstream.lock.release()
 
     def connect(self):
         timeout = 2  #Seconds
@@ -805,6 +815,7 @@ def main():
     udp_server_thread = threading.Thread(target=udp_server.serve_forever)
     udp_server_thread.start()
     print("Server listening on " + listen_add + " port 53\n")
+    #TODO: Add maintenance thread that occasionally checks upstreams and updates the ad block lists
 
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
