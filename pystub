@@ -37,13 +37,40 @@ class upstream:
         self.tcp      = 1 if len(tls_name) > 0 else tcp
         self.tls      = 1 if len(tls_name) > 0 else 0
         upstream.upstreams.append(self)
-        upstream.enabled.append(self)
+
+    @staticmethod
+    def get_connection():
+        conn = None
+        up = None
+        while len(upstream.enabled): #TODO: parallel?
+            up = upstream.get_server()
+            conn = up.connect()
+            if conn: break
+            #TODO: lock
+            up.disable()
+        return up, conn
 
     @staticmethod
     def get_server():
-        if random.randrange(1000) == 999 or len(upstream.enabled) == 0:
-            upstream.enabled = upstream.upstreams.copy()
         return random.choice(upstream.enabled)
+
+    @staticmethod
+    def check_upstreams():
+        tmp = []
+        for up in upstream.upstreams:
+            conn = up.connect()
+            if conn:
+                up.close(conn)
+                up.enable()
+                tmp.append(up)
+        #TODO: lock
+        upstream.enabled = tmp.copy()
+
+    def enable(self):
+        upstream.enabled.append(self)
+
+    def disable(self):
+        upstream.enabled.remove(self)
 
     def connect(self):
         timeout = 2  #Seconds
@@ -53,7 +80,6 @@ class upstream:
                 sock  = socket.create_connection((self.address, self.port), timeout)
             except Exception:
                 print("Unable to connect to "+self.tls_name)
-                if self in upstream.enabled: upstream.enabled.remove(self)
                 return None
             upstr = cnxt.wrap_socket(sock, server_hostname=self.tls_name)
         else:
@@ -64,7 +90,6 @@ class upstream:
                 upstr.connect((self.address, self.port))
             except Exception:
                 print("Unable to connect to "+self.address)
-                if self in upstream.enabled: upstream.enabled.remove(self)
                 return None
         return upstr
 
@@ -771,7 +796,7 @@ def main():
     # Parse upstreams
     for cnfg in upstrm_cnfgs:
         new_upstr = upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
-        new_upstr.connect()  # TODO: implement better verification
+    upstream.check_upstreams()
 
     tcp_server = ThreadedTCPServer((listen_add, 53), ThreadedTCPRequestHandler)
     tcp_server_thread = threading.Thread(target=tcp_server.serve_forever)
@@ -780,6 +805,7 @@ def main():
     udp_server_thread = threading.Thread(target=udp_server.serve_forever)
     udp_server_thread.start()
     print("Server listening on " + listen_add + " port 53\n")
+
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
@@ -881,13 +907,7 @@ def process_query(request):
         response.set_flags(QR=1, RD=RD, RA=1, RCode=2)
         response.set_header(TXID=cltxid)
         return response.to_bytes()
-    # TODO: Consider making this block a static fuction of upstream
-    conn = None
-    attempts = 0
-    while conn is None and attempts < 10:  #TODO: parallel?
-        up = upstream.get_server()
-        conn = up.connect()
-        attempts += 1
+    up, conn = upstream.get_connection()
     if conn is None:
         print("Error connecting upstream.")
         response = DNSMessage()
