@@ -8,7 +8,7 @@ In the settings.py file, you can specify a list of domains to be blacklisted, or
 
 ## Getting Started
 ### Installing
-To install Pystub, run the install.sh script. This script installs the Pystub executable, the Pystub configuration file, and a Pystub Systemd unit file.
+To install Pystub, run the `install.sh` script. This script installs the Pystub executable, the Pystub configuration file, and a Pystub Systemd unit file.
 
 ### Configuration
 By default, Pystub looks for the pystub.yml configuration file at `/etc/pystub.yml`. This can be overridden with the -C flag.
@@ -27,7 +27,7 @@ The Systemd unit file is configured to run Pystub as a dynamic (sandboxed) user,
 ## Ad Blocking
 Domains can be blocked under the blacklist sections of the `pystub.yml` file. Adding a domain to the `domain` section ensures that any request for this domain or subdomains will be blocked. Additionally, an entry can be added the `url` section that points to a list of domains to be blocked.   
 
-To see a list of domains that are blocked in real time, you can start Pstub with the `-v` flag.
+To see a list of domains that are blocked in real time, you can start Pystub with the `-v` flag.
 ```
 # /path/to/pystub -v 
 Imported 3278 blacklist domains
