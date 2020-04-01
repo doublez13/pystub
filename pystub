@@ -805,7 +805,7 @@ def main():
 
     # Parse upstreams
     for cnfg in upstrm_cnfgs:
-        new_upstr = upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
+        upstream(cnfg["address"], cnfg["tls_name"], cnfg["port"], cnfg["tcp"])
     upstream.check_upstreams()
 
     tcp_server = ThreadedTCPServer((listen_add, 53), ThreadedTCPRequestHandler)
