@@ -291,7 +291,7 @@ class DNSMessage:
         #TODO: Validity check needed
         self.FLAG = {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
-    def set_flags(self, QR=None, OpCode=None, AA=None, TC=None, RD=None, RA=None, Z=None, AD=None, CD=None, RCode=None):
+    def set_flags(self, QR=None, OpCode=None, AA=None, TC=None, RD=None, RA=None, AD=None, CD=None, RCode=None):
         if type(QR) is int and QR in {0,1}:
             self.FLAG["QR"] = QR
         if type(OpCode) is int and OpCode in DNSMessage.opcodes:
