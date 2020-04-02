@@ -150,7 +150,7 @@ class DNSMessage:
               'SSHFP': 44}
 
     qclasses = {'IN': 1}
-    
+
     rcodes = {0: "No Error",
               1: "Format Error",
               2: "Server Failure",
@@ -169,7 +169,7 @@ class DNSMessage:
                   'DSS'    : 2,
                   'ECDSA'  : 3,
                   'Ed25519': 4}
-    
+
     sshfp_types = {'SHA-1'  : 1,
                    'SHA-256': 2}
 
@@ -187,7 +187,7 @@ class DNSMessage:
                      "CD": 0,
                      "RCode": 0
                     }
-        self.QDCount = 0 
+        self.QDCount = 0
         self.ANCount = 0
         self.NSCount = 0
         self.ARCount = 0
@@ -243,7 +243,7 @@ class DNSMessage:
         self.ARCount = int.from_bytes(header[10:12], 'big')
         flags = int.from_bytes(header[2:4], 'big')
         self.__bytes_to_flags(flags)
-  
+
     def set_header(self, TXID=None, QDCount=None, ANCount=None, NSCount=None, ARCount=None):
         if type(TXID) is int and TXID > 0:
             self.TXID = TXID
@@ -357,7 +357,7 @@ class DNSMessage:
 
 
     def gen_txid(self):
-        self.TXID = random.randrange(2**16-1) 
+        self.TXID = random.randrange(2**16-1)
 
     @staticmethod
     def name_to_bytes(qname):
@@ -411,7 +411,7 @@ class DNSMessage:
                     return None
                 return name_str
         return None
-   
+
     @staticmethod
     def skip_name(start, data):
         i = start
@@ -494,7 +494,7 @@ class DNSMessage:
             rdata = None
         return rdata
 
-    @staticmethod 
+    @staticmethod
     def __rdata_to_bytes(data):
         rdata = b''
         qtype = data['QTYPE']
@@ -583,7 +583,7 @@ class DNSMessage:
             print("Writing not implmented for record type: " + str(qtype))
             print(data)
         return rdata
-    
+
     # Writes the RR data to the packet
     # Call rdata_to_bytes for each record
     def __RRs_to_bytes(self):
@@ -613,7 +613,7 @@ class DNSMessage:
                 qtype  = data_section[i]['QTYPE']
                 qclass = data_section[i]['QCLASS']
                 ttl    = data_section[i]['TTL']
-    
+
                 tmp_res = DNSMessage.name_to_bytes(qname)
                 if response is None:
                     return None
@@ -641,10 +641,10 @@ class DNSMessage:
             elif section == 'Additional':
                 self.ARCount = source.ARCount
                 self.Additional = copy.deepcopy(source.Additional)
-            
+
     def __parse_packet(self, packet):
         pkt_len = len(packet)
-        
+
         # parse header
         if pkt_len < 12:
             self.ERROR = "Packet length too short: " + str(pkt_len) + " bytes"
@@ -652,7 +652,7 @@ class DNSMessage:
 
         header = packet[:12]
         self.__bytes_to_header(header)
-    
+
         if self.FLAG["RCode"] not in DNSMessage.rcodes:
             self.ERROR = "RCode not implemented: " + str(self.FLAG["RCode"])
             return
@@ -665,7 +665,7 @@ class DNSMessage:
         if self.FLAG['QR'] == 0 and (self.FLAG['OpCode'] or self.FLAG['AA'] or self.FLAG['RA'] or self.FLAG['Z'] or self.FLAG['RCode']):
             self.ERROR = "Invalid client request flags"
             return
-    
+
         pos = 12
         if(self.QDCount):
             if debug: print("Packet query section. Parsing...")
