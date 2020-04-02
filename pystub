@@ -85,9 +85,9 @@ class upstream:
     def connect(self):
         timeout = 2  #Seconds
         if self.tls:
-            cnxt  = ssl.create_default_context()
+            cnxt = ssl.create_default_context()
             try:
-                sock  = socket.create_connection((self.address, self.port), timeout)
+                sock = socket.create_connection((self.address, self.port), timeout)
             except Exception:
                 print("Unable to connect to "+self.tls_name)
                 return None
@@ -220,27 +220,27 @@ class DNSMessage:
         if self.TXID < 0:
             return None #TXID has not been initialized
         trans_id = self.TXID.to_bytes(2, 'big')
-        flags    = self.__flags_to_bytes()
+        flags = self.__flags_to_bytes()
         if len(self.Question) != self.QDCount:
             return None
-        QDCount  = self.QDCount.to_bytes(2, 'big')
+        QDCount = self.QDCount.to_bytes(2, 'big')
         if len(self.Answer) != self.ANCount:
             return None
-        ANCount  = self.ANCount.to_bytes(2, 'big')
+        ANCount = self.ANCount.to_bytes(2, 'big')
         if len(self.Authority) != self.NSCount:
             return None
-        NSCount  = self.NSCount.to_bytes(2, 'big')
+        NSCount = self.NSCount.to_bytes(2, 'big')
         if len(self.Additional) != self.ARCount:
             return None
-        ARCount  = self.ARCount.to_bytes(2, 'big')
+        ARCount = self.ARCount.to_bytes(2, 'big')
         return trans_id + flags + QDCount + ANCount + NSCount + ARCount
 
     def __bytes_to_header(self, header):
-        self.TXID     = int.from_bytes(header[:2], 'big')
-        self.QDCount  = int.from_bytes(header[4:6], 'big')
-        self.ANCount  = int.from_bytes(header[6:8], 'big')
-        self.NSCount  = int.from_bytes(header[8:10], 'big')
-        self.ARCount  = int.from_bytes(header[10:12], 'big')
+        self.TXID    = int.from_bytes(header[:2], 'big')
+        self.QDCount = int.from_bytes(header[4:6], 'big')
+        self.ANCount = int.from_bytes(header[6:8], 'big')
+        self.NSCount = int.from_bytes(header[8:10], 'big')
+        self.ARCount = int.from_bytes(header[10:12], 'big')
         flags = int.from_bytes(header[2:4], 'big')
         self.__bytes_to_flags(flags)
   
@@ -267,7 +267,7 @@ class DNSMessage:
     # RCode  : Response Code
     def __flags_to_bytes(self):
         QR = self.FLAG["QR"]
-        OpCode =self.FLAG["OpCode"]
+        OpCode = self.FLAG["OpCode"]
         AA = self.FLAG["AA"]
         TC = self.FLAG["TC"]
         RD = self.FLAG["RD"]
@@ -278,16 +278,16 @@ class DNSMessage:
         return flags.to_bytes(2, byteorder='big')
 
     def __bytes_to_flags(self, flags):
-        QR      = (flags >> 15) & 2**1-1
-        OpCode  = (flags >> 11) & 2**4-1
-        AA      = (flags >> 10) & 2**1-1
-        TC      = (flags >>  9) & 2**1-1
-        RD      = (flags >>  8) & 2**1-1
-        RA      = (flags >>  7) & 2**1-1
-        Z       = (flags >>  6) & 2**1-1
-        AD      = (flags >>  5) & 2**1-1  #RFC 4035
-        CD      = (flags >>  4) & 2**1-1  #RFC 4035
-        RCode   = (flags >>  0) & 2**4-1
+        QR     = (flags >> 15) & 2**1-1
+        OpCode = (flags >> 11) & 2**4-1
+        AA     = (flags >> 10) & 2**1-1
+        TC     = (flags >>  9) & 2**1-1
+        RD     = (flags >>  8) & 2**1-1
+        RA     = (flags >>  7) & 2**1-1
+        Z      = (flags >>  6) & 2**1-1
+        AD     = (flags >>  5) & 2**1-1  #RFC 4035
+        CD     = (flags >>  4) & 2**1-1  #RFC 4035
+        RCode  = (flags >>  0) & 2**4-1
         #TODO: Validity check needed
         self.FLAG = {"QR":QR, "OpCode":OpCode, "AA":AA, "TC":TC, "RD":RD, "RA":RA, "Z":Z, "AD":AD, "CD":CD, "RCode":RCode}
 
@@ -438,9 +438,9 @@ class DNSMessage:
             rdata['CNAME'] = DNSMessage.bytes_to_name(start, data)
         elif qtype == DNSMessage.qtypes['SOA']:
             if debug: print("Parsing SOA record")
-            rdata['MNAME']  = DNSMessage.bytes_to_name(start, data)
+            rdata['MNAME'] = DNSMessage.bytes_to_name(start, data)
             start = DNSMessage.skip_name(start, data)
-            rdata['RNAME']  = DNSMessage.bytes_to_name(start, data)
+            rdata['RNAME'] = DNSMessage.bytes_to_name(start, data)
             start = DNSMessage.skip_name(start, data)
             rdata['SERIAL']  = int.from_bytes(data[start:start+4], 'big')
             rdata['REFRESH'] = int.from_bytes(data[start+4:start+8], 'big')
@@ -508,8 +508,8 @@ class DNSMessage:
         elif qtype == 'NS':
             if debug: print("Building NS record")
             nsdname = DNSMessage.name_to_bytes(data['NSDNAME'])
-            rdata   += len(nsdname).to_bytes(2, byteorder='big')
-            rdata   += nsdname
+            rdata  += len(nsdname).to_bytes(2, byteorder='big')
+            rdata  += nsdname
         elif qtype == 'CNAME':
             if debug: print("Building CNAME record")
             cname  = DNSMessage.name_to_bytes(data['CNAME'])
@@ -517,9 +517,9 @@ class DNSMessage:
             rdata += cname
         elif qtype == 'SOA':
             if debug: print("Building SOA record")
-            mname   = DNSMessage.name_to_bytes(data['MNAME'])
-            rname   = DNSMessage.name_to_bytes(data['RNAME'])
-            size    = len(mname) + len(rname) + 4*5
+            mname = DNSMessage.name_to_bytes(data['MNAME'])
+            rname = DNSMessage.name_to_bytes(data['RNAME'])
+            size = len(mname) + len(rname) + 4*5
             serial  = data['SERIAL'].to_bytes(4, byteorder='big')
             refresh = data['REFRESH'].to_bytes(4, byteorder='big')
             retry   = data['RETRY'].to_bytes(4, byteorder='big')
@@ -545,17 +545,17 @@ class DNSMessage:
             tot_len = 0
             tmp = str.encode('')
             for entry in txtdata:
-                length  = len(entry).to_bytes(1, byteorder='big')
-                val     = str.encode(entry)
-                tmp     += length + val
+                length = len(entry).to_bytes(1, byteorder='big')
+                val = str.encode(entry)
+                tmp += length + val
                 tot_len += 1 + len(val)
             rdata += tot_len.to_bytes(2, byteorder='big')
             rdata += tmp
         elif qtype == 'AAAA':
             if debug: print("Building AAAA record")
-            size   = 16
+            size = 16
             rdata += size.to_bytes(2, byteorder='big')
-            aaaa   = data['ADDRESS']
+            aaaa = data['ADDRESS']
             for group in aaaa.split(':'): rdata += bytes.fromhex(group)
         elif qtype == 'SRV':
             if debug: print("Building SRV record")
@@ -620,7 +620,7 @@ class DNSMessage:
                 tmp_res += DNSMessage.qtypes[qtype].to_bytes(2, byteorder='big')
                 tmp_res += DNSMessage.qclasses[qclass].to_bytes(2, byteorder='big')
                 tmp_res += ttl.to_bytes(4, byteorder='big')
-                rdata    = DNSMessage.__rdata_to_bytes(data_section[i])
+                rdata = DNSMessage.__rdata_to_bytes(data_section[i])
                 if len(rdata) > 0 :  #Type implemented
                     tmp_res  += rdata
                     response += tmp_res
@@ -703,12 +703,12 @@ class DNSMessage:
                 if pkt_len < pos + 10:
                     self.ERROR = "Malformed packet"
                     return
-                qtype    = int.from_bytes(packet[pos:pos+2], 'big')
-                qclass   = int.from_bytes(packet[pos+2:pos+4], 'big')
-                ttl      = int.from_bytes(packet[pos+4:pos+8], 'big')
-                RDlength = int.from_bytes(packet[pos+8:pos+10], 'big')
+                qtype  = int.from_bytes(packet[pos:pos+2], 'big')
+                qclass = int.from_bytes(packet[pos+2:pos+4], 'big')
+                ttl    = int.from_bytes(packet[pos+4:pos+8], 'big')
+                RDlen  = int.from_bytes(packet[pos+8:pos+10], 'big')
                 pos += 10
-                if pkt_len < pos + RDlength:
+                if pkt_len < pos + RDlen:
                     self.ERROR = "Malformed packet"
                     return
                 RData = DNSMessage.__bytes_to_rdata(qtype, pos, packet)
@@ -723,7 +723,7 @@ class DNSMessage:
                     RData['TTL']    = ttl
                     #TODO: We need to check if any of the RData fields are set to NONE
                     entries.append(RData)
-                pos += RDlength
+                pos += RDlen
         return
 
     # Reverse map function for 1:1 dictionaries
