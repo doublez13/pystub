@@ -25,7 +25,7 @@ The Systemd unit file is configured to run Pystub as a dynamic (sandboxed) user,
 # systemctl start pystub
 ```
 ## Ad Blocking
-Domains can be blocked under the blacklist sections of the `pystub.yml` file. Adding a domain to the `domain` section ensures that any request for this domain or subdomains will be blocked. Additionally, an entry can be added the `url` section that points to a list of domains to be blocked. The example configuration file should be enough to block most ads.   
+Domains can be blocked under the blacklist sections of the `pystub.yml` file. Adding a domain to the `domain` section ensures that any request for this domain or subdomains will be blocked. Additionally, an entry can be added the `url` section that points to a list of hosts to be blocked. The format needs to be a list or a HOSTS file. Most lists found online should work just fine. The example configuration file should be enough to block most ads. https://firebog.net/ has a great collection of lists for blocking everything from ads to malware sites.   
 
 To see a list of domains that are blocked in real time, you can start Pystub with the `-v` flag.
 ```

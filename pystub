@@ -786,6 +786,7 @@ def main():
         listen_add = config["listen"][0]  # TODO: support for multiple listen addresses
     if "blacklist" in config and len(config["blacklist"]) > 0:
         domain_regex = r"^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$"
+        ip_regex     = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
         if "url" in config["blacklist"]:
             for url in config["blacklist"]["url"]:
                 try:
@@ -794,9 +795,14 @@ def main():
                     print("Unable to parse blocklist from " + url)
                     continue
                 for line in page:
-                    domain = line.decode('utf-8').rstrip()
-                    if re.fullmatch(domain_regex, domain):
-                        blacklist.append(domain)
+                    decoded = line.decode('utf-8').strip()
+                    if decoded == '': continue
+                    if decoded[0] == '#': continue
+                    split = decoded.split()
+                    if re.fullmatch(domain_regex, split[0]): #Domain list
+                        blacklist.append(split[0])
+                    elif len(split) > 1 and re.fullmatch(ip_regex, split[0]) and re.fullmatch(domain_regex, split[1]): #HOSTS file format
+                        blacklist.append(split[1])
         if "domain" in config["blacklist"]:
             for domain in config["blacklist"]["domain"]:
                 if re.fullmatch(domain_regex, domain):

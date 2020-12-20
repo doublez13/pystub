@@ -22,7 +22,8 @@ upstreams:
     port: 853
     tcp: 1
 blacklist:
+  # firebog.net has a great list of blocklists. Links need to be in list or HOSTS file format.
   url:
-    - "https://pgl.yoyo.org/as/serverlist.php?hostformat=nohtml&showintro=0"
+    - "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext"
   domain:
     - "doubleclick.net"
