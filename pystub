@@ -781,7 +781,7 @@ def main():
                 sys.exit(1)
     if "upstreams" in config and len(config["upstreams"]) > 0:
         upstrm_cnfgs = config["upstreams"]
-    listen_add = ""
+    listen_add = "127.0.0.1"
     if "listen" in config and len(config["listen"]) > 0:
         listen_add = config["listen"][0]  # TODO: support for multiple listen addresses
     if "blacklist" in config and len(config["blacklist"]) > 0:

@@ -17,7 +17,7 @@ By default, Pystub looks for the pystub.yml configuration file at `/etc/pystub.y
 ```
 
 ### Socket
-By default, Pystub binds to 127.0.0.1:53. This can be modified by changing the `listen` parameter in the `pystub.yml` file. If left blank, Pystub will bind to all IPs on port 53. If you'd prefer not to run Pystub as root, you can grant the CAP_NET_BIND_SERVICE capability. This is how the service file is configured.
+By default, Pystub binds to 127.0.0.1:53. This can be modified by changing the `listen` parameter in the `pystub.yml` file. If you want Pystub to listen on all IPs, enter `0.0.0.0` for the `listen` parameter. If you'd prefer not to run Pystub as root, you can grant the CAP_NET_BIND_SERVICE capability. This is how the service file is configured.
 
 ### Running as a service
 The Systemd unit file is configured to run Pystub as a dynamic (sandboxed) user, with `CAP_NET_BIND_SERVICE` granted in order to bind to port 53.    
