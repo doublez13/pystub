@@ -899,7 +899,7 @@ def process_query(request):
     qname  = request.Question[0]['QNAME']
     qtype  = request.Question[0]['QTYPE']
     qclass = request.Question[0]['QCLASS']
-    if any(domain in qname for domain in blacklist) and qtype in ['A', 'AAAA']:
+    if qtype in ['A', 'AAAA'] and any(qname == domain or qname.endswith('.'+domain) for domain in blacklist):
         if verbose: print("Blocked: " + qname)
         response = DNSMessage()
         response.set_flags(QR=1, RD=RD, RA=1)
