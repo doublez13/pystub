@@ -17,7 +17,7 @@ By default, Pystub looks for the pystub.yml configuration file at `/etc/pystub.y
 ```
 
 ### Socket
-By default, Pystub binds to 127.0.0.1:53. This can be modified by changing the `listen` parameter in the `pystub.yml` file. If left blank, Pystub will bind to all IPs on port 53. If you'd prefer not to run Pystub as root, you can grant the CAP_NET_BIND_SERVICE capability.
+By default, Pystub binds to 127.0.0.1:53. This can be modified by changing the `listen` parameter in the `pystub.yml` file. If left blank, Pystub will bind to all IPs on port 53. If you'd prefer not to run Pystub as root, you can grant the CAP_NET_BIND_SERVICE capability. This is how the service file is configured.
 
 ### Running as a service
 The Systemd unit file is configured to run Pystub as a dynamic (sandboxed) user, with `CAP_NET_BIND_SERVICE` granted in order to bind to port 53.    
@@ -25,7 +25,7 @@ The Systemd unit file is configured to run Pystub as a dynamic (sandboxed) user,
 # systemctl start pystub
 ```
 ## Ad Blocking
-Domains can be blocked under the blacklist sections of the `pystub.yml` file. Adding a domain to the `domain` section ensures that any request for this domain or subdomains will be blocked. Additionally, an entry can be added the `url` section that points to a list of domains to be blocked.   
+Domains can be blocked under the blacklist sections of the `pystub.yml` file. Adding a domain to the `domain` section ensures that any request for this domain or subdomains will be blocked. Additionally, an entry can be added the `url` section that points to a list of domains to be blocked. The example configuration file should be enough to block most ads.   
 
 To see a list of domains that are blocked in real time, you can start Pystub with the `-v` flag.
 ```
@@ -63,7 +63,7 @@ Blocked: www.summerhamster.com
 - TLS
 
 ## Record Support
-Support for the following record types has been implemented with more to come soon:
+Support for the following record types has been implemented. If you need additional queries implemented, open an issue and I'll check it out.
 - A
 - NS
 - CNAME
@@ -81,7 +81,7 @@ Support for the following record types has been implemented with more to come so
 - Implement optional caching
 
 ## License
-This project is licensed under the 2-Clause BSD License
+This project is licensed under the 2-Clause BSD License.
 
 ## Acknowledgements
 Thanks to Peter Lowe for maintaining a fantastic blocklist for ad servers: https://pgl.yoyo.org/as/  
