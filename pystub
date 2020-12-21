@@ -745,7 +745,7 @@ upstrm_cnfgs = [
                  "tcp":1
                 }
                ]
-blacklist = []
+blacklist = set()
 #############################
 
 
@@ -800,13 +800,13 @@ def main():
                     if decoded[0] == '#': continue
                     split = decoded.split()
                     if re.fullmatch(domain_regex, split[0]): #Domain list
-                        blacklist.append(split[0])
+                        blacklist.add(split[0])
                     elif len(split) > 1 and re.fullmatch(ip_regex, split[0]) and re.fullmatch(domain_regex, split[1]): #HOSTS file format
-                        blacklist.append(split[1])
+                        blacklist.add(split[1])
         if "domain" in config["blacklist"]:
             for domain in config["blacklist"]["domain"]:
                 if re.fullmatch(domain_regex, domain):
-                    blacklist.append(domain)
+                    blacklist.add(domain)
         print("Imported " + str(len(blacklist)) + " blacklist domains")
 
     # Parse upstreams
