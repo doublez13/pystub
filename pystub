@@ -86,6 +86,7 @@ class upstream:
         timeout = 2  #Seconds
         if self.tls:
             cnxt = ssl.create_default_context()
+            cnxt.minimum_version = ssl.TLSVersion.TLSv1_2
             try:
                 sock = socket.create_connection((self.address, self.port), timeout)
             except Exception:
