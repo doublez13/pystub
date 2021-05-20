@@ -861,6 +861,7 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer): pa
 class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer): pass
 
 def process_query(request):
+    if debug: print("##############################")
     if debug: print("Received client query")
     request = DNSMessage(request)
     if request.ERROR:
@@ -909,7 +910,9 @@ def process_query(request):
         loopback = '127.0.0.1' if qtype == 'A' else '0000:0000:0000:0000:0000:0000:0000:0001'
         response.Answer = [{'ADDRESS': loopback, 'QNAME': qname, 'QTYPE': qtype, 'QCLASS': qclass, 'TTL': 3600}]
         return response.to_bytes()
-    if debug: print("Client query parsed\n")
+    if debug: print("Client query parsed")
+    if debug: print(request)
+    if debug: print("\n")
 
     # Build and send query upstream
     if debug: print("Generating upstream query")
@@ -946,7 +949,9 @@ def process_query(request):
         response.set_flags(QR=1, RD=RD, RA=1, RCode=1)
         response.set_header(TXID=cltxid)
         return response.to_bytes()
-    if debug: print("Upstream response parsed\n")
+    if debug: print("Upstream response parsed")
+    if debug: print(up_response)
+    if debug: print("\n")
 
     # Build and send client response
     if debug: print("Generating client response")
@@ -954,8 +959,10 @@ def process_query(request):
     response.set_flags(QR=1, RD=RD, RA=1)
     response.set_header(TXID=cltxid)
     response.copy_RRs(up_response)
-    if debug: print("Sent client response\n\n")
-    return response.to_bytes()
+    res_bytes = response.to_bytes()
+    if debug: print("Sent client response")
+    if debug: print("##############################\n\n")
+    return res_bytes
 
 
 if __name__ == "__main__":
