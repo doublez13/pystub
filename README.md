@@ -27,7 +27,7 @@ Domains can be blocked under the blacklist sections of the `pystub.yml` file. Ad
 
 To see a list of domains that are blocked in real time, you can start Pystub with the `-v` flag.
 ```
-# /path/to/pystub -v 
+# pystub -v 
 Imported 3278 blacklist domains
 Server listening on 127.0.0.1 port 53
 
