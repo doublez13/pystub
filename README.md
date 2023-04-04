@@ -11,7 +11,7 @@ To install Pystub, run the `install.sh` script. This script installs the Pystub 
 ### Configuration
 By default, Pystub looks for the pystub.yml configuration file at `/etc/pystub.yml`. This can be overridden with the -C flag.
 ```
-# /path/to/pystub -C /path/to/pystub.yml
+# pystub -C /path/to/pystub.yml
 ```
 
 ### Socket
