@@ -1,0 +1,53 @@
+policy_module(pystub,1.0.0)
+
+########################################
+#
+# Declarations
+#
+
+type pystub_t;
+type pystub_exec_t;
+#Create a domain for long running processes (daemons) which can be started by init scripts. 
+init_daemon_domain(pystub_t, pystub_exec_t)
+#Allow SELinux Domain transition from systemd into confined domain with NoNewPrivileges (Systemd security feature)
+init_nnp_daemon_domain(pystub_t)
+
+type pystub_conf_t;
+# Make the specified type a configuration file. 
+files_config_file(pystub_conf_t)
+
+########################################
+#
+# pystub local policy
+#
+
+#Allow pystub to read it's config file
+allow pystub_t pystub_conf_t:file read_file_perms;
+
+#Execute generic programs in bin directories in the caller domain
+#We call /usr/bin/env
+corecmd_exec_bin(pystub_t) 
+
+#Bind to the correct ports
+allow pystub_t self:tcp_socket create_stream_socket_perms; 
+allow pystub_t self:udp_socket create_stream_socket_perms; 
+corenet_tcp_bind_dns_port(pystub_t)
+corenet_tcp_bind_generic_node(pystub_t)
+corenet_udp_bind_dns_port(pystub_t)
+corenet_udp_bind_generic_node(pystub_t)
+
+#Connect to upstream HTTP servers and read the SSL certificates
+corenet_tcp_connect_http_port(pystub_t)
+miscfiles_read_generic_certs(pystub_t)
+
+#Allows pystub to connect to upstream dns servers (port 853 included).
+#Also needed for pystub to lookup the addresses of any DNS blocklists.
+sysnet_dns_name_resolve(pystub_t)
+
+#Stolen from stubby policy :)
+ifdef(`init_systemd',`
+   # pystub systemd service uses DynamicUser=yes, which makes it call
+   # LookupDynamicUserByUID in order to get its own user name.
+   init_dbus_chat(pystub_t)   
+   dbus_system_bus_client(pystub_t)
+') 
