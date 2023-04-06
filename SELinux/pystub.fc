@@ -1,0 +1,3 @@
+/etc/pystub.yml -- gen_context(system_u:object_r:pystub_conf_t,s0)
+
+/usr/bin/pystub -- gen_context(system_u:object_r:pystub_exec_t,s0)
